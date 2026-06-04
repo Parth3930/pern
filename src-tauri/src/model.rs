@@ -1,0 +1,123 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ModelInfo {
+    pub id: String,
+    pub display_name: String,
+    pub file_name: String,
+    pub download_url: String,
+    pub sha256: Option<String>,
+    pub tier: String,
+    pub default: bool,
+    pub size_mb: u64,
+    pub recommended_ram_gb: u64,
+    pub context_length: u32,
+    pub estimated_memory: String,
+    pub recommended_for: String,
+}
+
+pub fn get_model_registry() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "qwen-1.5-1.8b-chat-q4".to_string(),
+            display_name: "Qwen 1.5 1.8B Chat Q4 (1.7B)".to_string(),
+            file_name: "qwen1_5-1_8b-chat-q4_k_m.gguf".to_string(),
+            download_url: "https://huggingface.co/Qwen/Qwen1.5-1.8B-Chat-GGUF/resolve/main/qwen1_5-1_8b-chat-q4_k_m.gguf".to_string(),
+            sha256: None,
+            tier: "recommended".to_string(),
+            default: true,
+            size_mb: 1130,
+            recommended_ram_gb: 4,
+            context_length: 32768,
+            estimated_memory: "1.1 GB".to_string(),
+            recommended_for: "Fast local reasoning (Recommended 1.7B/1.8B model)".to_string(),
+        },
+        ModelInfo {
+            id: "qwen-2.5-1.5b-it-q4".to_string(),
+            display_name: "Qwen 2.5 1.5B Instruct Q4".to_string(),
+            file_name: "Qwen2.5-1.5B-Instruct-Q4_K_M.gguf".to_string(),
+            download_url: "https://huggingface.co/bartowski/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/Qwen2.5-1.5B-Instruct-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "balanced".to_string(),
+            default: false,
+            size_mb: 1110,
+            recommended_ram_gb: 4,
+            context_length: 4096,
+            estimated_memory: "1.1 GB".to_string(),
+            recommended_for: "Optimized response quality and fast local reasoning".to_string(),
+        },
+        ModelInfo {
+            id: "qwen-2.5-7b-it-q4".to_string(),
+            display_name: "Qwen 2.5 7B Instruct Q4".to_string(),
+            file_name: "Qwen2.5-7B-Instruct-Q4_K_M.gguf".to_string(),
+            download_url: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "balanced".to_string(),
+            default: false,
+            size_mb: 4680,
+            recommended_ram_gb: 16,
+            context_length: 4096,
+            estimated_memory: "4.7 GB".to_string(),
+            recommended_for: "High quality chat and reasoning (requires 16GB+ RAM)".to_string(),
+        },
+        ModelInfo {
+            id: "gemma-4-e2b-it-q4".to_string(),
+            display_name: "Gemma 4 E2B Instruct Q4 (3.5B)".to_string(),
+            file_name: "google_gemma-4-E2B-it-Q4_K_M.gguf".to_string(),
+            download_url: "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "balanced".to_string(),
+            default: false,
+            size_mb: 3460,
+            recommended_ram_gb: 8,
+            context_length: 8192,
+            estimated_memory: "3.5 GB".to_string(),
+            recommended_for: "High quality local chat and light reasoning".to_string(),
+        },
+        ModelInfo {
+            id: "gemma-4-e4b-it-q4".to_string(),
+            display_name: "Gemma 4 E4B Instruct Q4 (5.4B)".to_string(),
+            file_name: "google_gemma-4-E4B-it-Q4_K_M.gguf".to_string(),
+            download_url: "https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/google_gemma-4-E4B-it-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "balanced".to_string(),
+            default: false,
+            size_mb: 5410,
+            recommended_ram_gb: 16,
+            context_length: 8192,
+            estimated_memory: "5.4 GB".to_string(),
+            recommended_for: "Superior local reasoning and chat (requires 16GB RAM)".to_string(),
+        },
+        ModelInfo {
+            id: "deepseek-r1-distill-qwen-1.5b-q4".to_string(),
+            display_name: "DeepSeek R1 Distill Qwen 1.5B Q4".to_string(),
+            file_name: "deepseek-r1-distill-qwen-1.5b-q4.gguf".to_string(),
+            download_url: "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "reasoning".to_string(),
+            default: false,
+            size_mb: 1100,
+            recommended_ram_gb: 4,
+            context_length: 4096,
+            estimated_memory: "1.1 GB".to_string(),
+            recommended_for: "Local reasoning and logic tasks".to_string(),
+        },
+
+    ]
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WhatsAppContact {
+    pub name: String,
+    pub number: String,
+    pub auto_reply_enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DownloadProgress {
+    pub status: Option<String>,
+    pub error: Option<String>,
+    pub digest: Option<String>,
+    pub total: Option<u64>,
+    pub completed: Option<u64>,
+}

@@ -1,0 +1,181 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - '**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android
+    if: |
+      github.event.head_commit != null && (
+        contains(github.event.head_commit.message, 'prod') ||
+        contains(github.event.head_commit.message, 'PROD') ||
+        contains(github.event.head_commit.message, 'Prod')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up NDK
+        run: |
+          NDK_PATH=$(ls -d /usr/local/lib/android/sdk/ndk/* | sort -V | tail -n 1)
+          echo "NDK_HOME=$NDK_PATH" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_PATH" >> $GITHUB_ENV
+
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Configure Keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          mkdir -p src-tauri/gen/android/app
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/app/pern-release.jks
+          
+          cat <<EOF > src-tauri/gen/keystore.properties
+          storeFile=pern-release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Build Android App
+        run: npm run android:build
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build
+          path: |
+            **/*.apk
+            **/*.aab
+
+  build-windows:
+    name: Build Windows
+    if: |
+      github.event.head_commit != null && (
+        contains(github.event.head_commit.message, 'prod') ||
+        contains(github.event.head_commit.message, 'PROD') ||
+        contains(github.event.head_commit.message, 'Prod')
+      )
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Build Windows App
+        run: npm run tauri build
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/exe/*.exe
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-build
+          path: ./artifacts/android
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: ./artifacts/windows
+
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG_NAME="beta-$VERSION"
+          
+          mkdir -p release-files
+          find ./artifacts -type f \( -name "*.apk" -o -name "*.aab" -o -name "*.msi" -o -name "*.exe" \) -exec cp {} release-files/ \;
+          
+          files=(release-files/*)
+          if [ -e "${files[0]}" ]; then
+            gh release create "$TAG_NAME" release-files/* \
+              --title "Release $TAG_NAME" \
+              --notes "Automated build and release from commit ${{ github.sha }} containing 'prod' in the message."
+          else
+            echo "No build files found to release!"
+            exit 1
+          fi

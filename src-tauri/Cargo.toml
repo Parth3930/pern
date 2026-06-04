@@ -1,0 +1,59 @@
+[package]
+name = "pern"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+[profile.dev]
+debug = false # Disables debug info
+
+[profile.release]
+lto = "thin"          # Much faster than full LTO, still optimizes across crates
+codegen-units = 4     # Parallel codegen units — faster compile at minor perf cost
+opt-level = 3         # Keep full optimization
+strip = true          # Strip symbols to reduce binary size
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "tauri_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "gzip", "brotli", "deflate"] }
+dirs = "5.0"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+futures-util = "0.3"
+tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
+image = "0.25"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls-tls"] }
+wa-rs = "0.2"
+wa-rs-sqlite-storage = "0.2"
+wa-rs-tokio-transport = "0.2"
+wa-rs-ureq-http = "0.2"
+qrcode-generator = "4.1"
+base64 = "0.22"
+wa-rs-proto = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+wa-rs-binary = "0.2"
+diesel = { version = "2.3", features = ["sqlite"] }
+libsqlite3-sys = { version = "0.35", features = ["bundled"] }
+zip = "2"
+flate2 = "1"
+tar = "0.4"

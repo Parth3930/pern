@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allows cleartext (HTTP) traffic to the local llama-server running on 127.0.0.1:4891.
+  Android API 28+ blocks all cleartext traffic by default in release builds.
+  Localhost traffic is safe to exempt because it never leaves the device.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">pern</string>
+    <string name="main_activity_title">pern</string>
+    <string name="background_service_channel_name">Pern Background Service</string>
+    <string name="background_service_channel_description">Keeps Pern running in the background for WhatsApp and Email notifications.</string>
+    <string name="background_service_notification_title">Pern is Running</string>
+    <string name="background_service_notification_text">Monitoring WhatsApp and Email</string>
+</resources>
