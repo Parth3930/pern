@@ -7,6 +7,7 @@ import {
   ToolArgs,
   ToolCall,
   cleanToolName,
+  isToolName,
 } from "../tools";
 export type { ToolName, ToolArgs, ToolCall };
 
@@ -63,6 +64,14 @@ function extractPromptFromUserMessage(userMessage: string): string | null {
   const fireMatch = msg.match(/fire\s+(?:a\s+)?command\s+in\s+\w+\s+of\s+(.+)$/i);
   if (fireMatch) return fireMatch[1].trim();
 
+  // 6b. Matches "fire <agent> in project <project> (to|and) <prompt>"
+  const fireAgentMatch = msg.match(/fire\s+\w+\s+(?:in|on)\s+(?:project\s+)?\w+\s+(?:to|and)\s+(.+)$/i);
+  if (fireAgentMatch) return fireAgentMatch[1].trim();
+
+  // 6c. Matches "fire <agent> (to|and) <prompt>"
+  const fireAgentDirectMatch = msg.match(/fire\s+\w+\s+(?:to|and)\s+(.+)$/i);
+  if (fireAgentDirectMatch) return fireAgentDirectMatch[1].trim();
+
   // 7. Matches "run <agent> on <project> to <prompt>"
   const runToMatch = msg.match(/run\s+\w+\s+on\s+\w+\s+to\s+(.+)$/i);
   if (runToMatch) return runToMatch[1].trim();
@@ -80,6 +89,12 @@ export function extractToolCalls(content: string, userMessage?: string): ToolCal
   const seenSignatures = new Set<string>();
 
   for (let call of parsed) {
+    // Filter out hallucinated tool names not in ALL_TOOL_NAMES
+    if (!isToolName(call.tool)) {
+      console.warn(`[CHAT] Ignoring hallucinated tool "${call.tool}" - not a known tool.`);
+      continue;
+    }
+
     // Post-process to correct hallucinated example prompts from small models
     if (userMessage && call.tool === "send_to_cli_agent" && typeof call.args.prompt === "string") {
       const currentPrompt = call.args.prompt.trim();
@@ -123,6 +138,10 @@ export function extractToolCalls(content: string, userMessage?: string): ToolCal
 }
 
 export function stripToolCalls(content: string): string {
+  // Strip tool result prefix (UI-only feedback marker)
+  if (content.startsWith("[TOOL_RESULT] ")) {
+    content = content.slice("[TOOL_RESULT] ".length);
+  }
   let lines = content.split("\n");
   lines = lines.filter(line => {
     const trimmed = line.trim();
@@ -135,6 +154,10 @@ export function sanitizeMessageForModel(
   message: ChatMessage,
 ): ChatMessage | null {
   if (message.role === "system" && message.content.startsWith("Tool Result:")) {
+    return null;
+  }
+  // Filter out tool result messages — they are UI feedback only, not model context
+  if (message.role === "assistant" && message.content.startsWith("[TOOL_RESULT] ")) {
     return null;
   }
   if (message.role !== "assistant") {
@@ -399,9 +422,10 @@ export function buildConversationHistory(
     whatsappContacts || undefined,
     lastToolResult || undefined
   );
-  console.log("[CHAT] Active tool categories for turn:", categories);
+  console.log("[CHAT][DIAG] buildConversationHistory", { intent: latestIntent, inputLength: userMsg.length, inputPreview: userMsg.slice(0, 80), categories, messagesIn: messages.length, contactsCount: whatsappContacts?.length ?? 0 });
 
   if (latestIntent === "action") {
+    console.log("[CHAT][DIAG] Building ACTION prompt (system + few-shots + tool sigs)");
     let memoryContext = "";
     if (memory.name) {
       memoryContext += `The owner of the device you are running on is ${memory.name}. `;
@@ -482,10 +506,13 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
     }
   }
 
-  return {
+  const result = {
     messages: [{ role: "system", content: systemPrompt }, ...finalMessages],
     summary: compacted.summary,
   };
+  const resultTotalChars = result.messages.reduce((sum, m) => sum + m.content.length, 0);
+  console.log("[CHAT][DIAG] buildConversationHistory DONE", { messagesOut: result.messages.length, totalChars: resultTotalChars, estTokens: Math.round(resultTotalChars / 4), systemPromptLen: systemPrompt.length, lastUserMsgLen: finalMessages[finalMessages.length - 1]?.content.length ?? 0 });
+  return result;
 }
 
 export function getStringArg(args: ToolArgs, key: string): string {

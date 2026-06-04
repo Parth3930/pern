@@ -58,6 +58,9 @@ pub fn clean_tool_name(tool: &str) -> String {
                 "send_to_cli_agent".to_string()
             } else if t == "whatsapp_message" || t == "send_whatsapp" {
                 "send_whatsapp_message".to_string()
+            } else if t.starts_with("send_message_to_") {
+                // Handle model hallucinating recipient name into tool name, e.g. "send_message_to_rover"
+                "send_whatsapp_message".to_string()
             } else if t == "email" || t == "send_mail" {
                 "send_email".to_string()
             } else if t == "whatsapp_auto_reply" || t == "whatsapp_auto" {
@@ -475,35 +478,70 @@ pub fn build_action_system_prompt(memory_context: &str, categories: &[String]) -
             .join("\n")
     };
 
-    format!(
-"You are Pern's AI Agent. Your job is to translate user requests directly into a list of tool actions starting with \"- \".
-If the user request is conversational (e.g. general knowledge, greetings, chat, questions with no tool mapping), output exactly:
-Plan:
-- conversational()
+    let has = |c: &str| categories.contains(&c.to_string());
+    let is_messaging = has("whatsapp") || has("discord") || has("email");
 
-IMPORTANT RULES:
-1. If input contains action keywords (status, online, message, send, email, discord, whatsapp, app, auto reply, agents, behave, open, close, running, shutdown, restart, reboot), it is NOT conversational.
-2. Resolve pronouns (it, them) to their original referents. Always output actions in the exact chronological order requested by the user. When repeating an action (like \"do that dm again\" or \"do the first part again\"), look back to the exact original arguments of that action and write it out on a separate line.
-3. Do not output guild_id; it's auto-injected.
-4. MESSAGE FORMATTING & SPEECH CONVERSION:
-   a. If the request specifies a message using \"saying [text]\" or \"say [text]\", use that exact text (e.g., saying \"ping\" -> message=\"ping\"). Do not prefix or convert it.
-   b. Convert indirect requests (e.g. \"ask if they are available\", \"ask if he is available\", \"asking if she can join\", \"ask how their morning is going\") to friendly direct speech prefixed with \"Hey [recipient_name], \" (e.g. \"Hey Alice, are you available?\", \"Hey rahul, are you available?\").
-   c. E.g. \"message Bob to open discord\" means send_whatsapp_message(recipient=\"Bob\", message=\"open discord\"), NOT launch_app(app_name=\"discord\"). Do not execute actions inside a message.
-   d. E.g. \"dm <@123> asking if they can fix the server\" -> discord_send_dm(user_id=\"123\", message=\"Hey, can you fix the server?\"). Prefix DMs for user mentions with \"Hey, \" and convert indirect speech to direct.
-   e. If the request has \"then dm <@ID> to [action] it\", the DM message MUST be exactly \"[action] it\". Do NOT copy the email body or subject into the DM message.
-   f. Do not prefix messages to names with \"Hey [name], \" if the name is not known. For user mentions like <@123>, use \"Hey, \" instead (e.g., \"Hey, can you check it?\"). A name is known if it is explicitly specified in the request (e.g., \"message rahul\" or \"tell Alice\").
-   g. Preserve the exact spelling and casing of all names and recipients as written in the user request (e.g., if the request says \"rahul\", use \"rahul\" in lowercase; if request says \"Chirag\", use \"Chirag\").
-5. AUTO-REPLY SETTINGS: \"turn auto reply on/off\" maps to set_whatsapp_auto_reply(recipient, enabled=true/false). Only use toggle_whatsapp_auto_reply when \"toggle\" is explicitly used.
-6. BAN VS DELETE MESSAGES: discord_ban's delete_message_seconds argument is ONLY for deleting message history of the banned user (default is 0). It is NOT for purging messages in a channel. Deleting or purging messages in a channel MUST map to discord_delete_messages(channel_id, count).
-7. NO CODE OR LOGIC: NEVER output code blocks, if/else statements, loops, conditions, brackets, variables, or comments. Output ONLY a flat list of tool calls starting with \"- \".
-8. NO HALLUCINATED TOOLS: Do not generate tool calls for description of general activities (e.g., \"do some work\", \"do some math\"). Ignore them. Only use the allowed tools.
-9. REASON PROPAGATION: If a reason is specified for the first action in a chain (e.g. \"warn user for spamming, then mute them\"), propagate the same reason to subsequent relevant actions (like mute or ban) unless a different reason is specified.
+    let mut rules: Vec<String> = Vec::new();
+    rules.push("You are Pern's AI Agent. Your job is to translate user requests directly into a list of tool actions starting with \"- \".".to_string());
+    rules.push("If the request is conversational (e.g. greetings, questions with no tool mapping), output exactly: Plan:\\n- conversational()".to_string());
+    rules.push(String::new());
+    rules.push("IMPORTANT RULES:".to_string());
+
+    rules.push("1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.".to_string());
+    rules.push("2. Resolve pronouns (it, them) to their original referents. Always output actions in the exact chronological order requested.".to_string());
+
+    if has("discord") {
+        rules.push("3. Do not output guild_id; it's auto-injected.".to_string());
+    }
+
+    if is_messaging {
+        rules.push("4. MESSAGE FORMATTING:".to_string());
+        if has("whatsapp") || has("discord") {
+            rules.push("   a. \"saying [text]\" or \"say [text]\" -> use that exact text as message. This overrides any prefix rule.".to_string());
+            rules.push("   b. Convert indirect requests (\"ask if he is available\") to direct speech: \"Hey [name], are you available?\"".to_string());
+        }
+        if has("whatsapp") {
+            rules.push("   c. \"message Bob to open discord\" = send_whatsapp_message(\"Bob\", \"open discord\"), NOT launch_app. Do not execute actions inside a message.".to_string());
+        }
+        if has("discord") {
+            rules.push("   d. \"dm <@123> asking...\" -> discord_send_dm(user_id, \"Hey, can you...\"). Prefix DMs for mentions with \"Hey, \".".to_string());
+        }
+        if has("whatsapp") || has("discord") {
+            rules.push("   e. For named contacts, ALWAYS prefix messages with \"Hey [name], \" unless rule 4a applies. For <@mentions>, use \"Hey, \" instead.".to_string());
+            rules.push("   g. Preserve the exact spelling and casing of all names as written in the request.".to_string());
+        }
+        if has("email") {
+            rules.push("   f. Preserve the exact spelling and casing of all names and recipients as written in the request.".to_string());
+        }
+    }
+
+    if has("whatsapp") {
+        rules.push("5. AUTO-REPLY: \"turn auto reply on/off\" = set_whatsapp_auto_reply(recipient, enabled). Only use toggle_whatsapp_auto_reply when \"toggle\" is explicitly used.".to_string());
+    }
+
+    if has("discord") {
+        rules.push("6. BAN VS DELETE: discord_ban's delete_message_seconds is ONLY for deleting the banned user's history. Channel message purging MUST use discord_delete_messages.".to_string());
+    }
+
+    rules.push("7. NO CODE: NEVER output code blocks, if/else, loops, variables, or comments. Output ONLY a flat list of tool calls starting with \"- \".".to_string());
+    rules.push("8. NO HALLUCINATED TOOLS: Only use the allowed tools listed below.".to_string());
+
+    if has("discord") {
+        rules.push("9. REASON PROPAGATION: If a reason is given for the first action in a chain (e.g. \"warn for spamming, then mute\"), propagate it to subsequent relevant actions.".to_string());
+    }
+
+    if has("whatsapp") && has("discord") {
+        rules.push("10. DISCORD VS WHATSAPP: Channel/role/ban/mute/unban/<@mentions> map to Discord tools. Do NOT use send_whatsapp_message for Discord.".to_string());
+    }
+
+    rules.push("11. For 3+ actions, output a \"Todo:\" section before \"Plan:\". For simple requests, omit Todo.".to_string());
+
+    let rules_str = rules.join("\n");
+
+    format!("{}
 {}
 
-Owner context: {}",
-        signatures,
-        memory_context
-    )
+Owner context: {}", rules_str, signatures, memory_context)
 }
 
 /// Get the list of all canonical tool names.
@@ -555,21 +593,24 @@ pub fn discord_tools_with_guild_id() -> Vec<&'static str> {
     ]
 }
 
+const MAX_FEW_SHOTS: usize = 4;
+
 pub fn get_action_few_shots_filtered(categories: &[String]) -> String {
-    if categories.is_empty() {
-        FEW_SHOT_EXAMPLES
-            .iter()
-            .map(|e| e.text)
-            .collect::<Vec<_>>()
-            .join("\n\n")
+    let examples: Vec<&FewShotExample> = if categories.is_empty() {
+        FEW_SHOT_EXAMPLES.iter().collect()
     } else {
         FEW_SHOT_EXAMPLES
             .iter()
             .filter(|e| e.categories.is_empty() || e.categories.iter().any(|cat| categories.contains(&cat.to_string())))
-            .map(|e| e.text)
-            .collect::<Vec<_>>()
-            .join("\n\n")
-    }
+            .collect()
+    };
+    // Limit few-shots to avoid exceeding small model context windows (e.g. 4096 tokens)
+    examples
+        .into_iter()
+        .take(MAX_FEW_SHOTS)
+        .map(|e| e.text)
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// Get the unified action few-shot examples as a string.

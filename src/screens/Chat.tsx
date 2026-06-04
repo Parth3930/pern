@@ -142,19 +142,9 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
   };
 
   useEffect(() => {
-    let unsub: (() => void) | undefined;
     let unsubCLIAgent: (() => void) | undefined;
     const setup = async () => {
-      unsub = await api.onAppLog((log) => {
-        const prefix = log.level.toUpperCase();
-        if (log.level === "error") {
-          console.error(`[BACKEND] ${prefix}: ${log.message}`);
-        } else if (log.level === "warn") {
-          console.warn(`[BACKEND] ${prefix}: ${log.message}`);
-        } else {
-          console.log(`[BACKEND] ${prefix}: ${log.message}`);
-        }
-      });
+      // Note: onAppLog listener is handled in App.tsx (root level) to avoid duplication.
 
       // Listen for CLI agent task completions
       unsubCLIAgent = await api.onCLIAgentComplete((data) => {
@@ -179,7 +169,6 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
     };
     setup();
     return () => {
-      if (unsub) unsub();
       if (unsubCLIAgent) unsubCLIAgent();
     };
   }, []);
@@ -292,7 +281,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
         awaitingModelResponseRef.current = false;
 
         const content = accumulatedContent.trim();
-        console.log("[CHAT] Model raw output:", content);
+        console.log("[CHAT][DIAG] Model raw output:", { length: content.length, preview: content.slice(0, 200), intent: latestIntentRef.current });
         accumulatedContent = "";
 
         try {
@@ -300,8 +289,10 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
             .reverse()
             .find((m) => m.role === "user")?.content;
           const toolCalls = extractToolCalls(content, lastUserMsg);
+          console.log("[CHAT][DIAG] Tool extraction", { parsedToolCalls: toolCalls.length, toolNames: toolCalls.map(t => t.tool), intent: latestIntentRef.current });
 
           if (toolCalls.length > 0 && latestIntentRef.current === "action") {
+            console.log("[CHAT][DIAG] Action intent + tools found → executing tool batch");
             pendingToolExecutionRef.current = toolCalls;
             lastExecutedToolCallRef.current = null;
             // If the model output tools, we clean up the assistant message
@@ -314,7 +305,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
             // intent=chat or no tool calls
             if (toolCalls.length > 0) {
               console.warn(
-                "[CHAT] Model output tool JSON but intent=chat — retrying with chat-only prompt.",
+                "[CHAT][DIAG] MISMATCH: Model output tools but intent=chat — retrying with chat-only prompt.",
               );
               // Strip the bad message and retry once so the user gets a real reply
               const stripped = (nextMessages: ChatMessage[]) =>
@@ -373,7 +364,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
             ) {
               // If we intended an action but got no JSON, it's likely a conversational hallucination
               console.warn(
-                "[CHAT] Action intended but no JSON found — retrying with forced action prompt.",
+                "[CHAT][DIAG] Action intended but NO tool calls extracted from response — retrying with forced action prompt.",
               );
               emptyResponseRetryCountRef.current += 1;
 
@@ -484,7 +475,7 @@ pendingToolExecutionRef.current = null;
   }, []);
 
   const handleToolBatch = async (toolCalls: ToolCall[]) => {
-    console.log("[CHAT] Executing tool batch:", toolCalls);
+    console.log("[CHAT][DIAG] handleToolBatch START", { toolCount: toolCalls.length, tools: toolCalls.map(t => ({ tool: t.tool, argsKeys: Object.keys(t.args) })) });
     const callsSig = JSON.stringify(toolCalls);
     if (lastExecutedToolCallRef.current === callsSig) {
       setCurrentTask(null);
@@ -855,7 +846,7 @@ pendingToolExecutionRef.current = null;
 
 followUpMessages.push({
           role: "assistant",
-          content: buildToolReply(tc, result),
+          content: "[TOOL_RESULT] " + buildToolReply(tc, result),
         });
         if (result.ok) {
           lastToolResultRef.current = {
@@ -881,7 +872,7 @@ followUpMessages.push({
             : reason;
         followUpMessages.push({
           role: "assistant",
-          content: errorMessage,
+          content: "[TOOL_RESULT] " + errorMessage,
         });
       }
     }
@@ -931,6 +922,7 @@ followUpMessages.push({
 
     const trimmedInput = textToSend.trim();
     console.log("[CHAT] User prompt:", trimmedInput);
+    console.log("[CHAT][DIAG] handleSend started", { inputLength: trimmedInput.length, isOverride: overrideInput !== undefined, isGenerating, pendingTools: !!pendingToolExecutionRef.current, messagesCount: messagesRef.current.length });
     if (/^(clear|clear chat)$/i.test(trimmedInput)) {
       awaitingModelResponseRef.current = false;
       lastExecutedToolCallRef.current = null;
@@ -1005,6 +997,7 @@ followUpMessages.push({
 
     const latestIntent = detectActionIntent(trimmedInput, messagesRef.current);
     latestIntentRef.current = latestIntent;
+    console.log("[CHAT][DIAG] Intent detected:", latestIntent);
 
     // We no longer do manual extraction here.
     // We let the model handle the intent and tool generation.
@@ -1014,6 +1007,7 @@ followUpMessages.push({
       try {
         relevantSkills = await api.findRelevantSkills(trimmedInput);
       } catch (_) { /* non-critical */ }
+      console.log("[CHAT][DIAG] Skills found:", relevantSkills.length);
 
       const historyResult = buildConversationHistory(
         nextMessages,
@@ -1024,6 +1018,7 @@ followUpMessages.push({
         relevantSkills.length > 0 ? relevantSkills : undefined,
         config.whatsapp_contacts,
       );
+      console.log("[CHAT][DIAG] History built", { totalMessages: historyResult.messages.length, summaryLength: historyResult.summary.length, systemPromptPreview: historyResult.messages[0]?.content.slice(0, 120) + '...', lastUserMsgLength: historyResult.messages[historyResult.messages.length - 1]?.content.length });
 
       if (historyResult.summary !== memoryForTurn.conversation_summary) {
         const updatedMemory = {
@@ -1056,13 +1051,13 @@ followUpMessages.push({
         }
       }
 
-      console.log(
-        "[DEBUG] Sending conversation history to model (omitted system prompt for readability)."
-      );
+      const totalChars = historyResult.messages.reduce((sum, m) => sum + m.content.length, 0);
+      console.log("[CHAT][DIAG] Sending to model", { model: config.selected_model, messageCount: historyResult.messages.length, totalChars, estimatedTokens: Math.round(totalChars / 4) });
+      console.log("[CHAT][DIAG] Message roles:", historyResult.messages.map(m => m.role));
       awaitingModelResponseRef.current = true;
       await api.sendChatMessage(config.selected_model, historyResult.messages);
     } catch (e) {
-      console.error("[CHAT] sendChatMessage threw an error:", e);
+      console.error("[CHAT][DIAG] sendChatMessage FAILED:", e);
       awaitingModelResponseRef.current = false;
       setCurrentTask(null);
       setIsGenerating(false);

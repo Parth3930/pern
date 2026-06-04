@@ -28,10 +28,16 @@ async fn send_chat_message(
     messages: Vec<ChatMessage>,
     window: tauri::Window,
 ) -> Result<(), String> {
-    println!("[CHAT] Command received for model: {}", model_id);
+    let msg_count = messages.len();
+    let total_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+    println!("[CHAT][DIAG] Command received: model={}, messages={}, total_chars={}, est_tokens={}", model_id, msg_count, total_chars, total_chars / 4);
+    println!("[CHAT][DIAG] Message roles: {:?}", messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>());
+    if let Some(sys) = messages.first() {
+        println!("[CHAT][DIAG] System prompt length: {} chars, preview: {}...", sys.content.len(), &sys.content[..sys.content.len().min(150)]);
+    }
     let client = Client::new();
     let req_body = ChatRequest {
-        model: "local".to_string(), // OpenAI format expects a string, but the local model ignores it
+        model: "local".to_string(),
         messages,
         temperature: 0.7,
         stream: true,
@@ -106,13 +112,18 @@ async fn send_chat_message(
         }
     }
 
+    println!("[CHAT][DIAG] Response received, status={}, starting SSE stream", res.status());
     let mut stream = res.bytes_stream();
     let mut buffer = Vec::new();
+    let mut chunk_count: u32 = 0;
+    let mut total_bytes: usize = 0;
 
     while let Some(chunk_res) = stream.next().await {
         match chunk_res {
             Ok(chunk) => {
                 buffer.extend_from_slice(&chunk);
+                chunk_count += 1;
+                total_bytes += chunk.len();
 
                 // Process SSE format
                 let mut unparsed = Vec::new();
@@ -123,7 +134,7 @@ async fn send_chat_message(
                     if line.starts_with("data: ") {
                         let data = &line[6..];
                         if data == "[DONE]" {
-                            println!("[CHAT] Stream marked as done.");
+                            println!("[CHAT][DIAG] Stream DONE: chunks={}, total_bytes={}", chunk_count, total_bytes);
                             break;
                         }
                         if let Ok(response) = serde_json::from_str::<OpenAIStreamChunk>(data) {
@@ -148,9 +159,9 @@ async fn send_chat_message(
         }
     }
 
-    // Always signal completion so UI doesn't hang
+    println!("[CHAT][DIAG] Emitting chat-complete");
     let _ = window.emit("chat-complete", ());
-    println!("[CHAT] Command finished.");
+    println!("[CHAT][DIAG] Command finished OK");
     Ok(())
 }
 
