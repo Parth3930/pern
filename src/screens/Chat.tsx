@@ -328,24 +328,21 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                   );
 
                   // Update the last user message in React state to include the context (keeps cache matching across turns)
-                  if (retryHistory.messages.length > 0) {
-                    const lastModifiedMsg = retryHistory.messages[retryHistory.messages.length - 1];
-                    if (lastModifiedMsg.role === "user") {
-                      setMessages((prev) => {
-                        const next = [...prev];
-                        for (let i = next.length - 1; i >= 0; i -= 1) {
-                          if (next[i].role === "user") {
-                            next[i] = {
-                              ...next[i],
-                              content: lastModifiedMsg.content,
-                            };
-                            break;
-                          }
+                  if (retryHistory.messages.length > 0 && retryHistory.wrappedUserMessage) {
+                    setMessages((prev) => {
+                      const next = [...prev];
+                      for (let i = next.length - 1; i >= 0; i -= 1) {
+                        if (next[i].role === "user") {
+                          next[i] = {
+                            ...next[i],
+                            content: retryHistory.wrappedUserMessage!,
+                          };
+                          break;
                         }
-                        messagesRef.current = next;
-                        return next;
-                      });
-                    }
+                      }
+                      messagesRef.current = next;
+                      return next;
+                    });
                   }
 
                   awaitingModelResponseRef.current = true;
@@ -385,24 +382,21 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                 );
 
                 // Update the last user message in React state to include the context (keeps cache matching across turns)
-                if (retryHistory.messages.length > 0) {
-                  const lastModifiedMsg = retryHistory.messages[retryHistory.messages.length - 1];
-                  if (lastModifiedMsg.role === "user") {
-                    setMessages((prev) => {
-                      const next = [...prev];
-                      for (let i = next.length - 1; i >= 0; i -= 1) {
-                        if (next[i].role === "user") {
-                          next[i] = {
-                            ...next[i],
-                            content: lastModifiedMsg.content,
-                          };
-                          break;
-                        }
+                if (retryHistory.messages.length > 0 && retryHistory.wrappedUserMessage) {
+                  setMessages((prev) => {
+                    const next = [...prev];
+                    for (let i = next.length - 1; i >= 0; i -= 1) {
+                      if (next[i].role === "user") {
+                        next[i] = {
+                          ...next[i],
+                          content: retryHistory.wrappedUserMessage!,
+                        };
+                        break;
                       }
-                      messagesRef.current = next;
-                      return next;
-                    });
-                  }
+                    }
+                    messagesRef.current = next;
+                    return next;
+                  });
                 }
 
                 // Add a final system nudge for JSON
@@ -1031,24 +1025,21 @@ followUpMessages.push({
       }
 
       // Update the user message in React state to include the context (keeps cache matching across turns)
-      if (historyResult.messages.length > 0) {
-        const lastModifiedMsg = historyResult.messages[historyResult.messages.length - 1];
-        if (lastModifiedMsg.role === "user") {
-          setMessages((prev) => {
-            const next = [...prev];
-            for (let i = next.length - 1; i >= 0; i -= 1) {
-              if (next[i].role === "user") {
-                next[i] = {
-                  ...next[i],
-                  content: lastModifiedMsg.content,
-                };
-                break;
-              }
+      if (historyResult.messages.length > 0 && historyResult.wrappedUserMessage) {
+        setMessages((prev) => {
+          const next = [...prev];
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            if (next[i].role === "user") {
+              next[i] = {
+                ...next[i],
+                content: historyResult.wrappedUserMessage!,
+              };
+              break;
             }
-            messagesRef.current = next;
-            return next;
-          });
-        }
+          }
+          messagesRef.current = next;
+          return next;
+        });
       }
 
       const totalChars = historyResult.messages.reduce((sum, m) => sum + m.content.length, 0);

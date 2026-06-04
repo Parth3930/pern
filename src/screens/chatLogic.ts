@@ -170,6 +170,7 @@ export function sanitizeMessageForModel(
 export interface CompactionResult {
   messages: ChatMessage[];
   summary: string;
+  wrappedUserMessage?: string;
 }
 
 function summarizeMessages(messages: ChatMessage[]): string {
@@ -465,6 +466,33 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
 - If you offered to help with something and they say "Sure" — DO it, don't ask again.`;
   }
 
+  // Calculate wrapped version of ONLY the current user message (without prepended previous messages)
+  const lastUserMsgInInput = [...messages].reverse().find(m => m.role === "user");
+  const originalUserContent = lastUserMsgInInput ? lastUserMsgInInput.content : "";
+  let wrappedUserMessage = originalUserContent;
+
+  if (originalUserContent) {
+    if (latestIntent === "action") {
+      const fewShots = getActionFewShots(categories);
+      const contextStr = dynamicContext ? `[Owner context: ${dynamicContext.trim()}]\n\n` : "";
+      wrappedUserMessage = `${contextStr}${fewShots}\n\nUser Request: ${originalUserContent}\nPlan:\n`;
+    } else {
+      const contextParts: string[] = [];
+      if (memory.name) {
+        contextParts.push(`The user's name is ${memory.name}.`);
+      }
+      if (summarySection) {
+        contextParts.push(summarySection.trim());
+      }
+      if (skillsSection) {
+        contextParts.push(skillsSection.trim());
+      }
+      if (contextParts.length > 0) {
+        wrappedUserMessage = `[Context:\n${contextParts.join("\n")}]\n\n${originalUserContent}`;
+      }
+    }
+  }
+
   let finalMessages = compacted.messages;
 
   // 3. Ensure the first message after system is 'user'
@@ -509,6 +537,7 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
   const result = {
     messages: [{ role: "system", content: systemPrompt }, ...finalMessages],
     summary: compacted.summary,
+    wrappedUserMessage,
   };
   const resultTotalChars = result.messages.reduce((sum, m) => sum + m.content.length, 0);
   console.log("[CHAT][DIAG] buildConversationHistory DONE", { messagesOut: result.messages.length, totalChars: resultTotalChars, estTokens: Math.round(resultTotalChars / 4), systemPromptLen: systemPrompt.length, lastUserMsgLen: finalMessages[finalMessages.length - 1]?.content.length ?? 0 });
