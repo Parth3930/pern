@@ -32,7 +32,8 @@ export type ToolName =
   | "send_to_cli_agent"
   | "get_cli_agents_status"
   | "restart_system"
-  | "shutdown_system";
+  | "shutdown_system"
+  | "add_todo";
 
 export type ToolArgs = Record<string, unknown>;
 
@@ -74,6 +75,7 @@ export const ALL_TOOL_NAMES: ToolName[] = [
   "get_cli_agents_status",
   "restart_system",
   "shutdown_system",
+  "add_todo",
 ];
 
 /** Discord tools that automatically get guild_id injected */
@@ -123,6 +125,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   get_cli_agents_status: 'Gets CLI agents status.',
   restart_system: 'Restarts the system (computer).',
   shutdown_system: 'Shuts down the system (computer).',
+  add_todo: 'Adds a new todo task/reminder. time is optional (local ISO string without Z, e.g. "2026-06-05T12:00:00"). repeat_hours is optional (number of hours between repeats, e.g. 2 for every 2 hours, 24 for daily).',
 };
 
 /** Tool signatures for the action prompt */
@@ -158,6 +161,7 @@ export function getToolSignatures(categories?: string[]): string {
     ["get_cli_agents_status", "", "agents"],
     ["restart_system", "", "system"],
     ["shutdown_system", "", "system"],
+    ["add_todo", "text: string, time?: string, repeat_hours?: number", "todos"],
   ] as const;
 
   const filtered = (!categories || categories.length === 0)
@@ -518,6 +522,33 @@ export function buildActionSystemPrompt(memoryContext: string, categories?: stri
   // Rule 11: Always
   rules.push(`11. For 3+ actions, output a "Todo:" section before "Plan:". For simple requests, omit Todo.`);
 
+  // Rule 12: Always
+  rules.push(`12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.`);
+
+  if (has("todos")) {
+    const now = new Date();
+    const formatLocalISO = (d: Date) => {
+      const pad = (num: number) => num.toString().padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+    const localNow = formatLocalISO(now);
+    const localPlus2 = formatLocalISO(new Date(now.getTime() + 2 * 60 * 60 * 1000));
+    const localPlus1 = formatLocalISO(new Date(now.getTime() + 1 * 60 * 60 * 1000));
+    const tomorrow9 = new Date();
+    tomorrow9.setDate(tomorrow9.getDate() + 1);
+    tomorrow9.setHours(9, 0, 0, 0);
+    const localTomorrow9 = formatLocalISO(tomorrow9);
+
+    rules.push(`13. TODO TIME AND REPEAT RULES:`);
+    rules.push(`    - When resolving relative times like "in next 2 hrs", "in 30 mins", calculate the target local time by adding that duration to the current local time.`);
+    rules.push(`    - Remove relative time expressions (e.g., "in next 2 hrs", "tomorrow at 9am", "in 30 mins") from the todo text, keeping only the clean task description.`);
+    rules.push(`    - NEVER set repeat_hours for relative offsets like "in next X hrs" or "in Y mins". repeat_hours must ONLY be set when the user explicitly requests a repeating interval, such as "every 2 hours" or "daily".`);
+    rules.push(`    - Output the time in local ISO format WITHOUT timezone suffix/offset (do NOT append 'Z' or '+05:30'). For example, given the current local time is "${localNow}":`);
+    rules.push(`      * "add a todo for drinking water in next 2 hrs" -> add_todo(text="drinking water", time="${localPlus2}", repeat_hours=null)`);
+    rules.push(`      * "remind me to check emails in 1 hour" -> add_todo(text="check emails", time="${localPlus1}", repeat_hours=null)`);
+    rules.push(`      * "add a repeating todo to walk the dog every 24 hours starting tomorrow at 9 AM" -> add_todo(text="walk the dog", time="${localTomorrow9}", repeat_hours=24)`);
+  }
+
   return [
     ...rules,
     "",
@@ -541,6 +572,22 @@ export function normalizeToolCall(value: unknown): ToolCall | null {
   if (!candidate.args || typeof candidate.args !== "object") return null;
 
   const args = { ...(candidate.args as ToolArgs) };
+
+  // Standardize text/task for add_todo
+  if (candidate.tool === "add_todo") {
+    if ("reminder" in args && !("text" in args)) {
+      args.text = args.reminder;
+      delete args.reminder;
+    }
+    if ("task" in args && !("text" in args)) {
+      args.text = args.task;
+      delete args.task;
+    }
+    if ("todo" in args && !("text" in args)) {
+      args.text = args.todo;
+      delete args.todo;
+    }
+  }
 
   // Standardize agent_name for send_to_cli_agent
   if (candidate.tool === "send_to_cli_agent") {

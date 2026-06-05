@@ -211,6 +211,33 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     fs::write(path, content).map_err(|e| e.to_string())
 }
 
+pub fn get_todos_path() -> PathBuf {
+    let mut path = get_app_dir();
+    path.push("todos.json");
+    path
+}
+
+pub fn load_todos() -> serde_json::Value {
+    let path = get_todos_path();
+    if path.exists() {
+        if let Ok(content) = fs::read_to_string(&path) {
+            if let Ok(todos) = serde_json::from_str::<serde_json::Value>(&content) {
+                return todos;
+            }
+        }
+    }
+    serde_json::json!([])
+}
+
+pub fn save_todos(todos: &serde_json::Value) -> Result<(), String> {
+    let path = get_todos_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let content = serde_json::to_string_pretty(todos).map_err(|e| e.to_string())?;
+    fs::write(path, content).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

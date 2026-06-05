@@ -362,6 +362,8 @@ pub fn run() {
             commands::list_projects,
             commands::set_autostart,
             commands::get_autostart,
+            commands::get_todos,
+            commands::save_todos,
             send_chat_message
         ])
         .build(tauri::generate_context!())

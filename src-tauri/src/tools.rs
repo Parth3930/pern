@@ -174,6 +174,7 @@ pub fn get_tool_params(tool: &str) -> &'static [&'static str] {
         "get_cli_agents_status" => &[],
         "restart_system" => &[],
         "shutdown_system" => &[],
+        "add_todo" => &["text", "time", "repeat_hours"],
         _ => &[],
     }
 }
@@ -383,6 +384,24 @@ pub fn parse_plan_to_tool_calls(plan_text: &str, guild_id: &str) -> Vec<ToolCall
             args.insert("reason".to_string(), serde_json::Value::Null);
         }
 
+        if tool == "add_todo" {
+            if args.contains_key("reminder") && !args.contains_key("text") {
+                if let Some(val) = args.remove("reminder") {
+                    args.insert("text".to_string(), val);
+                }
+            }
+            if args.contains_key("task") && !args.contains_key("text") {
+                if let Some(val) = args.remove("task") {
+                    args.insert("text".to_string(), val);
+                }
+            }
+            if args.contains_key("todo") && !args.contains_key("text") {
+                if let Some(val) = args.remove("todo") {
+                    args.insert("text".to_string(), val);
+                }
+            }
+        }
+
         for _ in 0..count {
             tool_calls.push(ToolCall {
                 tool: tool.clone(),
@@ -430,6 +449,7 @@ const TOOL_DEFINITIONS: &[ToolDefinition] = &[
     ToolDefinition { category: "agents", signature: "- get_cli_agents_status() -> Gets CLI agents status." },
     ToolDefinition { category: "system", signature: "- restart_system() -> Restarts the system (computer)." },
     ToolDefinition { category: "system", signature: "- shutdown_system() -> Shuts down the system (computer)." },
+    ToolDefinition { category: "todos", signature: "- add_todo(text: string, time?: string, repeat_hours?: number) -> Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional." },
 ];
 
 struct FewShotExample {
@@ -553,6 +573,15 @@ pub fn detect_required_tool_categories(user_message: &str) -> Vec<String> {
         categories.insert("agents".to_string());
     }
 
+    // 6. Todos Matcher
+    static RE_TODOS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re_todos = RE_TODOS.get_or_init(|| {
+        regex::Regex::new(r"(?i)\b(todo|todos|reminder|reminders|remind)\b").unwrap()
+    });
+    if re_todos.is_match(&normalized) {
+        categories.insert("todos".to_string());
+    }
+
     let mut res: Vec<String> = categories.into_iter().collect();
     res.sort();
     res
@@ -633,13 +662,42 @@ pub fn build_action_system_prompt(memory_context: &str, categories: &[String]) -
     }
 
     rules.push("11. For 3+ actions, output a \"Todo:\" section before \"Plan:\". For simple requests, omit Todo.".to_string());
+    rules.push("12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.".to_string());
+
+    if has("todos") {
+        use chrono::Timelike;
+        let local_now = chrono::Local::now();
+        let format_local = |dt: chrono::DateTime<chrono::Local>| dt.format("%Y-%m-%dT%H:%M:%S").to_string();
+        let local_now_str = format_local(local_now);
+        let local_plus_2 = format_local(local_now + chrono::Duration::hours(2));
+        let local_plus_1 = format_local(local_now + chrono::Duration::hours(1));
+
+        let tomorrow = local_now + chrono::Duration::days(1);
+        let tomorrow_9am = tomorrow
+            .with_hour(9).unwrap_or(tomorrow)
+            .with_minute(0).unwrap_or(tomorrow)
+            .with_second(0).unwrap_or(tomorrow);
+        let local_tomorrow_9am = format_local(tomorrow_9am);
+
+        rules.push("13. TODO TIME AND REPEAT RULES:".to_string());
+        rules.push("    - When resolving relative times like \"in next 2 hrs\", \"in 30 mins\", calculate the target local time by adding that duration to the current local time.".to_string());
+        rules.push("    - Remove relative time expressions (e.g., \"in next 2 hrs\", \"tomorrow at 9am\", \"in 30 mins\") from the todo text, keeping only the clean task description.".to_string());
+        rules.push("    - NEVER set repeat_hours for relative offsets like \"in next X hrs\" or \"in Y mins\". repeat_hours must ONLY be set when the user explicitly requests a repeating interval, such as \"every 2 hours\" or \"daily\".".to_string());
+        rules.push(format!("    - Output the time in local ISO format WITHOUT timezone suffix/offset (do NOT append 'Z' or timezone offsets). For example, given the current local time is \"{}\":", local_now_str));
+        rules.push(format!("      * \"add a todo for drinking water in next 2 hrs\" -> add_todo(text=\"drinking water\", time=\"{}\", repeat_hours=null)", local_plus_2));
+        rules.push(format!("      * \"remind me to check emails in 1 hour\" -> add_todo(text=\"check emails\", time=\"{}\", repeat_hours=null)", local_plus_1));
+        rules.push(format!("      * \"add a repeating todo to walk the dog every 24 hours starting tomorrow at 9 AM\" -> add_todo(text=\"walk the dog\", time=\"{}\", repeat_hours=24)", local_tomorrow_9am));
+    }
 
     let rules_str = rules.join("\n");
+    let now = chrono::Local::now();
+    let time_context = format!("Current time is {} (ISO: {}). ", now.format("%Y-%m-%d %H:%M:%S"), now.to_rfc3339());
+    let full_memory = format!("{}{}", time_context, memory_context);
 
     format!("{}
 {}
 
-Owner context: {}", rules_str, signatures, memory_context)
+Owner context: {}", rules_str, signatures, full_memory)
 }
 
 /// Get the list of all canonical tool names.
@@ -672,6 +730,7 @@ pub fn all_tool_names() -> Vec<&'static str> {
         "get_cli_agents_status",
         "restart_system",
         "shutdown_system",
+        "add_todo",
     ]
 }
 

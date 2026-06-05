@@ -263,6 +263,10 @@ export const api = {
   getAutostart: () => invoke<boolean>("get_autostart"),
   setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
 
+  // Todos persistence
+  getTodos: () => invoke<any[]>("get_todos"),
+  saveTodos: (todos: any[]) => invoke<void>("save_todos", { todos }),
+
   onCLIAgentComplete: (
     cb: (data: {
       agent: string;

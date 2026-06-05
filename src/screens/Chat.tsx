@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { api, AppConfig, ChatMessage, UserMemory } from "../lib/api";
 import { Send, Mic, MicOff } from "lucide-react";
 import { useSpeech } from "../lib/speech";
+import { showNotification } from "../lib/notifications";
 
 import logo from "../assets/logo.png";
 interface Props {
   config: AppConfig;
   onConfigUpdate?: () => void;
+  setShowTodos?: (show: boolean) => void;
 }
 
 import {
@@ -58,7 +60,7 @@ const cleanUserMessageForDisplay = (content: string) => {
   return content;
 };
 
-export default function Chat({ config, onConfigUpdate }: Props) {
+export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userMemory, setUserMemory] = useState<UserMemory>({
     name: null,
@@ -492,6 +494,47 @@ export default function Chat({ config, onConfigUpdate }: Props) {
           result = appName
             ? await api.launchApp(appName)
             : { ok: false, error: "The app name was missing." };
+        } else if (tc.tool === "add_todo") {
+          const text = getStringArg(tc.args, "text");
+          const time = getStringArg(tc.args, "time") || "";
+          const repeatHours = getNumberArg(tc.args, "repeat_hours") || 0;
+
+          if (!text) {
+            result = { ok: false, error: "Task text is required." };
+          } else {
+            const stored = localStorage.getItem("pern_todos");
+            const todos = stored ? JSON.parse(stored) : [];
+
+            let resolvedTime = time;
+            if (repeatHours > 0 && !resolvedTime) {
+              const futureDate = new Date();
+              futureDate.setHours(futureDate.getHours() + repeatHours);
+              resolvedTime = futureDate.toISOString();
+            }
+
+            const newTodo = {
+              id: Math.random().toString(36).substring(2, 9),
+              text: text.trim(),
+              time: resolvedTime ? new Date(resolvedTime).toISOString() : "",
+              completed: false,
+              reminded: false,
+              repeat_hours: repeatHours,
+            };
+
+            todos.unshift(newTodo);
+            localStorage.setItem("pern_todos", JSON.stringify(todos));
+            try {
+              await api.saveTodos(todos);
+            } catch (err) {
+              console.error("Failed to save todos to disk:", err);
+            }
+            window.dispatchEvent(new Event("pern_todos_updated"));
+
+            result = {
+              ok: true,
+              message: `Added todo: "${text}"${resolvedTime ? ` scheduled for ${new Date(resolvedTime).toLocaleString()}` : ""}${repeatHours > 0 ? ` (repeats every ${repeatHours} hours)` : ""}.`
+            };
+          }
         } else if (tc.tool === "restart_system") {
           result = await api.restartSystem();
         } else if (tc.tool === "shutdown_system") {
@@ -979,6 +1022,21 @@ export default function Chat({ config, onConfigUpdate }: Props) {
       pendingTools: !!pendingToolExecutionRef.current,
       messagesCount: messagesRef.current.length,
     });
+    if (/^(?:open\s+|show\s+)?(?:up\s+)?(?:my\s+)?todo(s|(?:\s+list))?$/i.test(cleanInputForCommand)) {
+      if (setShowTodos) {
+        setShowTodos(true);
+        const userMsg: ChatMessage = { role: "user", content: textToSend };
+        const assistantMsg: ChatMessage = { role: "assistant", content: "Opening your Todo list..." };
+        const nextMessages = [...messagesRef.current, userMsg, assistantMsg];
+        messagesRef.current = nextMessages;
+        setMessages(nextMessages);
+        setInput("");
+        setIsGenerating(false);
+        speak("Opening your Todo list.");
+        return;
+      }
+    }
+
     if (
       /^(?:clear|clear\s+(?:the\s+)?chat(?:\s+.*)?|@clear(?:\s+.*)?|\/clear(?:\s+.*)?)$/i.test(
         cleanInputForCommand,
@@ -1167,6 +1225,77 @@ export default function Chat({ config, onConfigUpdate }: Props) {
       }
     }
   }, [isGenerating, messages, speak]);
+
+  // Sync todos from disk to localStorage on startup
+  useEffect(() => {
+    const syncTodos = async () => {
+      try {
+        const diskTodos = await api.getTodos();
+        if (diskTodos) {
+          localStorage.setItem("pern_todos", JSON.stringify(diskTodos));
+          window.dispatchEvent(new Event("pern_todos_updated"));
+        }
+      } catch (err) {
+        console.error("Failed to sync todos from disk on startup:", err);
+      }
+    };
+    syncTodos();
+  }, []);
+
+  // Background loop to check todo reminders
+  useEffect(() => {
+    const checkTodos = () => {
+      try {
+        const storedTodos = localStorage.getItem("pern_todos");
+        if (!storedTodos) return;
+        const todos = JSON.parse(storedTodos);
+        let updated = false;
+        
+        const now = new Date();
+        
+        const updatedTodos = todos.map((todo: any) => {
+          // Check if it's due, not completed, and not yet reminded
+          if (!todo.completed && !todo.reminded && todo.time) {
+            const reminderTime = new Date(todo.time);
+            if (reminderTime <= now) {
+              // Time to remind!
+              // 1. Speak up:
+              speak(`Excuse me, this is a reminder for your task: ${todo.text}`);
+              
+              // 2. Platform Notification:
+              showNotification("Todo Reminder", todo.text);
+              
+              if (todo.repeat_hours && todo.repeat_hours > 0) {
+                // Advance schedule by repeat_hours and keep reminded as false
+                const nextTime = new Date(reminderTime.getTime() + todo.repeat_hours * 60 * 60 * 1000);
+                todo.time = nextTime.toISOString();
+                todo.reminded = false;
+              } else {
+                todo.reminded = true;
+              }
+              updated = true;
+            }
+          }
+          return todo;
+        });
+        
+        if (updated) {
+          localStorage.setItem("pern_todos", JSON.stringify(updatedTodos));
+          api.saveTodos(updatedTodos).catch((err) => {
+            console.error("Failed to save updated todos to disk in background checker:", err);
+          });
+          // Dispatch event so TodoPanel updates
+          window.dispatchEvent(new Event("pern_todos_updated"));
+        }
+      } catch (err) {
+        console.error("Error checking todo reminders:", err);
+      }
+    };
+    
+    // Check every 5 seconds
+    const interval = setInterval(checkTodos, 5000);
+    return () => clearInterval(interval);
+  }, [speak]);
 
   const renderMessageContent = (
     content: string,

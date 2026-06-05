@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api, AppConfig, ModelInfo } from "../lib/api";
-import { FolderOpen, ChevronRight, ChevronDown, Loader2, Cpu, Trash2, Download, Mic } from "lucide-react";
+import { FolderOpen, ChevronRight, ChevronDown, Loader2, Cpu, Trash2, Download, Mic, CheckSquare } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import WhatsAppSettings from "../integrations/whatsapp/Settings";
@@ -9,6 +9,7 @@ import DiscordSettings from "../integrations/discord/Settings";
 import CLIAgentSettings from "../integrations/cli_agents/Settings";
 import ProjectsSettings from "../integrations/projects/Settings";
 import SkillsAndLearningSection from "../integrations/SkillsAndLearningPanel";
+import TodoPanel from "./TodoPanel";
 
 interface Props {
   config: AppConfig;
@@ -19,6 +20,7 @@ interface Props {
 export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   const [isWindows, setIsWindows] = useState(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [showTodosOverlay, setShowTodosOverlay] = useState(false);
 
   const [modelDir, setModelDir] = useState(config.model_dir);
   const [smtpHost, setSmtpHost] = useState(config.email_smtp_host);
@@ -336,6 +338,23 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
         <ProjectsSettings />
 
+        <div
+          className="settings-item"
+          style={{
+            cursor: "pointer",
+            marginTop: "0.5rem"
+          }}
+          onClick={() => setShowTodosOverlay(true)}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <CheckSquare size={14} />
+              <span className="settings-label" style={{ margin: 0, fontWeight: 600 }}>Todos & Reminders</span>
+            </div>
+            <ChevronRight size={14} />
+          </div>
+        </div>
+
         <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
           <div
             className={`section-header clickable ${voiceExpanded ? "active" : ""}`}
@@ -643,6 +662,10 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
           </button>
         </div>
       </div>
+
+      {showTodosOverlay && (
+        <TodoPanel onClose={() => setShowTodosOverlay(false)} />
+      )}
     </div>
   );
 }

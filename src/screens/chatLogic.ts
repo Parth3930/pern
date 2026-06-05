@@ -281,7 +281,8 @@ export const TOOL_CATEGORIES = {
   whatsapp: ["send_whatsapp_message", "set_whatsapp_auto_reply", "toggle_whatsapp_auto_reply", "toggle_whatsapp", "add_whatsapp_contact", "set_whatsapp_contact_auto_reply"],
   discord: ["set_discord_status", "discord_get_channels", "discord_send_channel_message", "discord_kick", "discord_ban", "discord_unban", "discord_mute", "discord_unmute", "discord_warn", "discord_delete_messages", "discord_assign_role", "discord_remove_role", "discord_send_dm", "discord_get_guilds", "set_discord_behaviour_channel", "get_user_behaviour"],
   email: ["send_email", "save_email_config"],
-  agents: ["send_to_cli_agent", "get_cli_agents_status"]
+  agents: ["send_to_cli_agent", "get_cli_agents_status"],
+  todos: ["add_todo"]
 } as const;
 
 function getCategoryForTool(toolName: string): string | null {
@@ -346,6 +347,12 @@ export function detectRequiredToolCategories(
     categories.add("agents");
   }
 
+  // 5.5 Todos Matcher
+  const isTodos = /\b(to[- ]do|todos?|remind(er)?s?)\b/i.test(normalized);
+  if (isTodos) {
+    categories.add("todos");
+  }
+
   // 6. Contextual confirmations/pronouns check
   const isConfirmationOrPronoun = /^(yes|yeah|yep|ok|okay|sure|do it|go ahead|send|yes send|please do|again|send it|do that|send him|send her|send them|send to him|send to her|send to them|send on whatsapp|send it on whatsapp|send him on whatsapp|send her on whatsapp)\s*$/i.test(normalized.trim()) ||
                                   /\b(again|it|them|him|her)\b/i.test(normalized);
@@ -375,6 +382,27 @@ export function detectRequiredToolCategories(
   }
 
   return Array.from(categories);
+}
+
+function getTodosContext(categories: string[]): string | null {
+  if (!categories.includes("todos")) return null;
+  try {
+    const storedTodos = localStorage.getItem("pern_todos");
+    if (!storedTodos) return null;
+    const todosList = JSON.parse(storedTodos);
+    const active = todosList.filter((t: any) => !t.completed);
+    if (active.length > 0) {
+      const formattedTodos = active.map((t: any) => {
+        const timeStr = t.time ? ` (due: ${new Date(t.time).toLocaleString()})` : "";
+        return `- ${t.text}${timeStr}`;
+      }).join("\n");
+      return `Active Todos:\n${formattedTodos}`;
+    }
+    return `Active Todos: None. All caught up!`;
+  } catch (e) {
+    console.error("Failed to parse todos for chat context:", e);
+    return null;
+  }
 }
 
 export function buildConversationHistory(
@@ -448,6 +476,8 @@ export function buildConversationHistory(
   if (latestIntent === "action") {
     console.log("[CHAT][DIAG] Building ACTION prompt (system + few-shots + tool sigs)");
     let memoryContext = "";
+    const now = new Date();
+    memoryContext += `Current time is ${now.toLocaleString()} (ISO: ${now.toISOString()}). `;
     if (memory.name) {
       memoryContext += `The owner of the device you are running on is ${memory.name}. `;
     }
@@ -507,6 +537,10 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
       if (skillsSection) {
         contextParts.push(skillsSection.trim());
       }
+      const todosCtx = getTodosContext(categories);
+      if (todosCtx) {
+        contextParts.push(todosCtx);
+      }
       if (contextParts.length > 0) {
         wrappedUserMessage = `[Context:\n${contextParts.join("\n")}]\n\n${originalUserContent}`;
       }
@@ -546,6 +580,10 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
         }
         if (skillsSection) {
           contextParts.push(skillsSection.trim());
+        }
+        const todosCtx = getTodosContext(categories);
+        if (todosCtx) {
+          contextParts.push(todosCtx);
         }
         if (contextParts.length > 0) {
           lastMsg.content = `[Context:\n${contextParts.join("\n")}]\n\n${lastMsg.content}`;
@@ -804,6 +842,8 @@ const commandPatterns = [
   /\b(ask|tell|message|text)\b.{0,20}\b(him|her|them|parth|samarth|rahul|mom|dad|chirag|rover)\b/i,
   /\b(send|message|text|email)\b.{0,20}\b(the same|same|it|them|him|her)\b/i,
   /\b(shutdown|shut down|reboot|restart|power off|poweroff)\b/i,
+  /\b(add|save|create|set|make|schedule)\b.{0,30}\b(to\s+do|todo|todos|reminder|reminders|task|tasks)\b/i,
+  /\b(remind|reminder)\b/i,
 ];
 
   if (commandPatterns.some((pattern) => pattern.test(normalized))) {

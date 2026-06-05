@@ -318,7 +318,7 @@ fn substring_levenshtein(sub: &str, full: &str) -> usize {
     if sub_len >= full_len {
         return levenshtein_distance(sub, full);
     }
-    
+
     let mut min_dist = usize::MAX;
     let full_chars: Vec<char> = full.chars().collect();
     for i in 0..=(full_len - sub_len) {
@@ -1434,7 +1434,7 @@ pub async fn internal_set_whatsapp_contact_auto_reply(
     state: &AppState,
 ) -> Result<String, String> {
     let mut config = state.config.lock().await;
-    let is_num = is_phone_number(&recipient);
+    let _is_num = is_phone_number(&recipient);
     let cleaned_recipient = clean_number(&recipient);
 
     println!("[WHATSAPP DEBUG] set auto-reply lookup for: '{}', cleaned: '{}', enabled: {}", recipient, cleaned_recipient, enabled);
@@ -1489,4 +1489,3 @@ pub async fn internal_toggle_whatsapp_contact_auto_reply(
         Err(format!("Contact '{}' not found.", recipient))
     }
 }
-

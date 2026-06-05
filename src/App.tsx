@@ -4,6 +4,7 @@ import { api, AppConfig } from "./lib/api";
 import Onboarding from "./screens/Onboarding";
 import Chat from "./screens/Chat";
 import SettingsPanel from "./screens/SettingsPanel";
+import TodoPanel from "./screens/TodoPanel";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Settings, Terminal } from "lucide-react";
 
@@ -11,6 +12,7 @@ function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showTodos, setShowTodos] = useState(false);
   const [platform, setPlatform] = useState<string>("desktop");
   const [logs, setLogs] = useState<
     { time: string; type: string; message: string }[]
@@ -287,8 +289,18 @@ function App() {
         />
       )}
 
+      {showTodos && (
+        <TodoPanel
+          onClose={() => setShowTodos(false)}
+        />
+      )}
+
       {config?.first_run_completed ? (
-        <Chat config={config} onConfigUpdate={refreshConfig} />
+        <Chat
+          config={config}
+          onConfigUpdate={refreshConfig}
+          setShowTodos={setShowTodos}
+        />
       ) : (
         <Onboarding config={config} onComplete={handleOnboardingComplete} />
       )}
