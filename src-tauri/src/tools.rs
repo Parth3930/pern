@@ -22,6 +22,14 @@ pub fn clean_tool_name(tool: &str) -> String {
         "discord_get_status" => "get_status".to_string(),
         "discord_launch_app" => "launch_app".to_string(),
         "discord_close_app" => "close_app".to_string(),
+        "open_app" => "launch_app".to_string(),
+        "open_application" => "launch_app".to_string(),
+        "run_app" => "launch_app".to_string(),
+        "start_app" => "launch_app".to_string(),
+        "close_application" => "close_app".to_string(),
+        "stop_app" => "close_app".to_string(),
+        "exit_app" => "close_app".to_string(),
+        "kill_app" => "close_app".to_string(),
         "discord_send_email" => "send_email".to_string(),
         "discord_send_whatsapp_message" => "send_whatsapp_message".to_string(),
         "discord_set_whatsapp_auto_reply" => "set_whatsapp_auto_reply".to_string(),
@@ -115,6 +123,61 @@ fn clean_user_id(val: serde_json::Value) -> serde_json::Value {
     val
 }
 
+fn has_unquoted_equals(s: &str) -> bool {
+    let mut in_quotes = false;
+    let mut quote_char = ' ';
+    let mut escaped = false;
+    for c in s.chars() {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' && in_quotes {
+            escaped = true;
+        } else if (c == '"' || c == '\'') && (!in_quotes || c == quote_char) {
+            in_quotes = !in_quotes;
+            quote_char = if in_quotes { c } else { ' ' };
+        } else if !in_quotes && c == '=' {
+            return true;
+        }
+    }
+    false
+}
+
+pub fn get_tool_params(tool: &str) -> &'static [&'static str] {
+    match tool {
+        "launch_app" => &["app_name"],
+        "close_app" => &["app_name"],
+        "send_whatsapp_message" => &["recipient", "message"],
+        "set_whatsapp_auto_reply" => &["recipient", "enabled"],
+        "toggle_whatsapp_auto_reply" => &["recipient"],
+        "toggle_whatsapp" => &["enabled"],
+        "set_discord_status" => &["status", "activity"],
+        "discord_get_channels" => &[],
+        "discord_send_channel_message" => &["channel_name", "message"],
+        "send_email" => &["to", "subject", "body"],
+        "save_email_config" => &["smtp_host", "smtp_port", "sender_email", "smtp_password"],
+        "add_whatsapp_contact" => &["name", "number"],
+        "discord_kick" => &["user_id", "reason"],
+        "discord_ban" => &["user_id", "reason", "delete_message_seconds"],
+        "discord_unban" => &["user_id"],
+        "discord_mute" => &["user_id", "duration_mins", "reason"],
+        "discord_unmute" => &["user_id"],
+        "discord_warn" => &["user_id", "reason"],
+        "discord_delete_messages" => &["channel_id", "count"],
+        "discord_assign_role" => &["user_id", "role_id"],
+        "discord_remove_role" => &["user_id", "role_id"],
+        "discord_send_dm" => &["user_id", "message"],
+        "discord_get_guilds" => &[],
+        "get_status" => &[],
+        "set_discord_behaviour_channel" => &["channel_id"],
+        "get_user_behaviour" => &["user_id"],
+        "send_to_cli_agent" => &["agent_name", "prompt", "project_name"],
+        "get_cli_agents_status" => &[],
+        "restart_system" => &[],
+        "shutdown_system" => &[],
+        _ => &[],
+    }
+}
+
 /// Parse a plan-format response (lines starting with "- tool(args)") into typed tool calls.
 pub fn parse_plan_to_tool_calls(plan_text: &str, guild_id: &str) -> Vec<ToolCall> {
     let mut content_to_parse = plan_text;
@@ -188,67 +251,102 @@ pub fn parse_plan_to_tool_calls(plan_text: &str, guild_id: &str) -> Vec<ToolCall
 
         let args_text = &line_to_parse[open_paren + 1..close_paren];
 
-        // Parse key-value arguments: key = value
+        // Parse key-value or positional arguments
         let mut args = serde_json::Map::new();
 
-        let mut current_key = String::new();
-        let mut current_val = String::new();
-        let mut in_quotes = false;
-        let mut quote_char = ' ';
-        let mut escaped = false;
-        let mut parsing_key = true;
+        if has_unquoted_equals(args_text) {
+            // Parse key-value arguments: key = value
+            let mut current_key = String::new();
+            let mut current_val = String::new();
+            let mut in_quotes = false;
+            let mut quote_char = ' ';
+            let mut escaped = false;
+            let mut parsing_key = true;
 
-        let chars: Vec<char> = args_text.chars().collect();
-        let mut idx = 0;
-        while idx < chars.len() {
-            let c = chars[idx];
-            if escaped {
-                current_val.push(c);
-                escaped = false;
-            } else if c == '\\' && in_quotes {
-                escaped = true;
-            } else if (c == '"' || c == '\'') && (!in_quotes || c == quote_char) {
-                in_quotes = !in_quotes;
-                quote_char = if in_quotes { c } else { ' ' };
-            } else if !in_quotes {
-                if c == '=' {
-                    parsing_key = false;
-                } else if c == ',' {
-                    // Flush pair
-                    let key = current_key.trim().to_string();
-                    let val_str = current_val.trim().to_string();
-                    if !key.is_empty() {
-                        let mut parsed_val = parse_value_str(&val_str);
-                        if key == "user_id" {
-                            parsed_val = clean_user_id(parsed_val);
+            let chars: Vec<char> = args_text.chars().collect();
+            let mut idx = 0;
+            while idx < chars.len() {
+                let c = chars[idx];
+                if escaped {
+                    current_val.push(c);
+                    escaped = false;
+                } else if c == '\\' && in_quotes {
+                    escaped = true;
+                } else if (c == '"' || c == '\'') && (!in_quotes || c == quote_char) {
+                    in_quotes = !in_quotes;
+                    quote_char = if in_quotes { c } else { ' ' };
+                } else if !in_quotes {
+                    if c == '=' {
+                        parsing_key = false;
+                    } else if c == ',' {
+                        // Flush pair
+                        let key = current_key.trim().to_string();
+                        let val_str = current_val.trim().to_string();
+                        if !key.is_empty() {
+                            let mut parsed_val = parse_value_str(&val_str);
+                            if key == "user_id" {
+                                parsed_val = clean_user_id(parsed_val);
+                            }
+                            args.insert(key, parsed_val);
                         }
-                        args.insert(key, parsed_val);
-                    }
-                    current_key.clear();
-                    current_val.clear();
-                    parsing_key = true;
-                } else {
-                    if parsing_key {
-                        current_key.push(c);
+                        current_key.clear();
+                        current_val.clear();
+                        parsing_key = true;
                     } else {
-                        current_val.push(c);
+                        if parsing_key {
+                            current_key.push(c);
+                        } else {
+                            current_val.push(c);
+                        }
                     }
+                } else {
+                    current_val.push(c);
                 }
-            } else {
-                current_val.push(c);
+                idx += 1;
             }
-            idx += 1;
-        }
 
-        // Flush last pair
-        let key = current_key.trim().to_string();
-        let val_str = current_val.trim().to_string();
-        if !key.is_empty() {
-            let mut parsed_val = parse_value_str(&val_str);
-            if key == "user_id" {
-                parsed_val = clean_user_id(parsed_val);
+            // Flush last pair
+            let key = current_key.trim().to_string();
+            let val_str = current_val.trim().to_string();
+            if !key.is_empty() {
+                let mut parsed_val = parse_value_str(&val_str);
+                if key == "user_id" {
+                    parsed_val = clean_user_id(parsed_val);
+                }
+                args.insert(key, parsed_val);
             }
-            args.insert(key, parsed_val);
+        } else {
+            // Positional fallback
+            static RE_POS_VALS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+            let re_pos = RE_POS_VALS.get_or_init(|| {
+                regex::Regex::new(r#""([^"\\]|\\.)*"|'([^'\\]|\\.)*'|true|false|True|False|null|None|none|[+-]?\d+(?:\.\d+)?|[a-zA-Z_]\w*"#).unwrap()
+            });
+
+            let mut pos_values = Vec::new();
+            for cap in re_pos.find_iter(args_text) {
+                let val_str = cap.as_str().trim();
+                let val = if val_str.starts_with('"') && val_str.ends_with('"') {
+                    serde_json::Value::String(val_str[1..val_str.len() - 1].replace(r#"\""#, r#"""#))
+                } else if val_str.starts_with('\'') && val_str.ends_with('\'') {
+                    serde_json::Value::String(val_str[1..val_str.len() - 1].replace(r#"\'"#, r#"'"#))
+                } else {
+                    parse_value_str(val_str)
+                };
+                pos_values.push(val);
+            }
+
+            let param_names = get_tool_params(&tool);
+            for (i, val) in pos_values.into_iter().enumerate() {
+                if i >= param_names.len() {
+                    break;
+                }
+                let key = param_names[i].to_string();
+                let mut final_val = val;
+                if key == "user_id" {
+                    final_val = clean_user_id(final_val);
+                }
+                args.insert(key, final_val);
+            }
         }
 
         // Auto-inject guild_id for Discord tools that need it

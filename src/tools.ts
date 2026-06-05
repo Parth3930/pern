@@ -183,6 +183,14 @@ export function cleanToolName(tool: string): string {
     "discord_get_status": "get_status",
     "discord_launch_app": "launch_app",
     "discord_close_app": "close_app",
+    "open_app": "launch_app",
+    "open_application": "launch_app",
+    "run_app": "launch_app",
+    "start_app": "launch_app",
+    "close_application": "close_app",
+    "stop_app": "close_app",
+    "exit_app": "close_app",
+    "kill_app": "close_app",
     "discord_send_email": "send_email",
     "discord_send_whatsapp_message": "send_whatsapp_message",
     "discord_set_whatsapp_auto_reply": "set_whatsapp_auto_reply",
@@ -253,6 +261,59 @@ function parseValue(valStr: string): unknown {
   return trimmed;
 }
 
+const TOOL_PARAMS: Record<string, string[]> = {
+  launch_app: ["app_name"],
+  close_app: ["app_name"],
+  send_whatsapp_message: ["recipient", "message"],
+  set_whatsapp_auto_reply: ["recipient", "enabled"],
+  toggle_whatsapp_auto_reply: ["recipient"],
+  toggle_whatsapp: ["enabled"],
+  set_discord_status: ["status", "activity"],
+  discord_get_channels: [],
+  discord_send_channel_message: ["channel_name", "message"],
+  send_email: ["to", "subject", "body"],
+  save_email_config: ["smtp_host", "smtp_port", "sender_email", "smtp_password"],
+  add_whatsapp_contact: ["name", "number"],
+  discord_kick: ["user_id", "reason"],
+  discord_ban: ["user_id", "reason", "delete_message_seconds"],
+  discord_unban: ["user_id"],
+  discord_mute: ["user_id", "duration_mins", "reason"],
+  discord_unmute: ["user_id"],
+  discord_warn: ["user_id", "reason"],
+  discord_delete_messages: ["channel_id", "count"],
+  discord_assign_role: ["user_id", "role_id"],
+  discord_remove_role: ["user_id", "role_id"],
+  discord_send_dm: ["user_id", "message"],
+  discord_get_guilds: [],
+  get_status: [],
+  set_discord_behaviour_channel: ["channel_id"],
+  get_user_behaviour: ["user_id"],
+  send_to_cli_agent: ["agent_name", "prompt", "project_name"],
+  get_cli_agents_status: [],
+  restart_system: [],
+  shutdown_system: [],
+};
+
+function hasUnquotedEquals(s: string): boolean {
+  let inQuotes = false;
+  let quoteChar = ' ';
+  let escaped = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (escaped) {
+      escaped = false;
+    } else if (c === '\\' && inQuotes) {
+      escaped = true;
+    } else if ((c === '"' || c === "'") && (!inQuotes || c === quoteChar)) {
+      inQuotes = !inQuotes;
+      quoteChar = inQuotes ? c : ' ';
+    } else if (!inQuotes && c === '=') {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Parse plan-format response (lines starting with "- tool(args)") into typed tool calls.
  * Mirrors src-tauri/src/tools.rs parse_plan_to_tool_calls
@@ -298,26 +359,55 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
     const argsText = match[2].replace(/\s*\((?:[x×\*\s]*|times\s*|repeat\s*)\d+\s*\)\s*$/i, "");
     const args: Record<string, unknown> = {};
 
-    // Parse "key = value" pairs
-    const argRegex = /(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|\d+)/g;
-    let argMatch;
-    while ((argMatch = argRegex.exec(argsText)) !== null) {
-      const key = argMatch[1];
-      let valStr = argMatch[2];
-      let val: unknown;
+    if (hasUnquotedEquals(argsText)) {
+      // Parse "key = value" pairs
+      const argRegex = /(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|\d+)/g;
+      let argMatch;
+      while ((argMatch = argRegex.exec(argsText)) !== null) {
+        const key = argMatch[1];
+        let valStr = argMatch[2];
+        let val: unknown;
 
-      if (valStr.startsWith('"') && valStr.endsWith('"')) {
-        val = valStr.slice(1, -1).replace(/\\"/g, '"');
-      } else if (valStr.startsWith("'") && valStr.endsWith("'")) {
-        val = valStr.slice(1, -1).replace(/\\'/g, "'");
-      } else {
-        val = parseValue(valStr);
+        if (valStr.startsWith('"') && valStr.endsWith('"')) {
+          val = valStr.slice(1, -1).replace(/\\"/g, '"');
+        } else if (valStr.startsWith("'") && valStr.endsWith("'")) {
+          val = valStr.slice(1, -1).replace(/\\'/g, "'");
+        } else {
+          val = parseValue(valStr);
+        }
+        // Clean user_id if present
+        if (key === "user_id" && typeof val === "string") {
+          val = val.replace(/[<@>]/g, "");
+        }
+        args[key] = val;
       }
-      // Clean user_id if present
-      if (key === "user_id" && typeof val === "string") {
-        val = val.replace(/[<@>]/g, "");
+    } else {
+      // Positional fallback
+      const valueRegex = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|[+-]?\d+(?:\.\d+)?|[a-zA-Z_]\w*/g;
+      let valMatch;
+      const posValues: unknown[] = [];
+      while ((valMatch = valueRegex.exec(argsText)) !== null) {
+        const valStr = valMatch[0];
+        let val: unknown;
+        if (valStr.startsWith('"') && valStr.endsWith('"')) {
+          val = valStr.slice(1, -1).replace(/\\"/g, '"');
+        } else if (valStr.startsWith("'") && valStr.endsWith("'")) {
+          val = valStr.slice(1, -1).replace(/\\'/g, "'");
+        } else {
+          val = parseValue(valStr);
+        }
+        posValues.push(val);
       }
-      args[key] = val;
+
+      const paramNames = TOOL_PARAMS[tool] || [];
+      for (let i = 0; i < posValues.length && i < paramNames.length; i++) {
+        let val = posValues[i];
+        const key = paramNames[i];
+        if (key === "user_id" && typeof val === "string") {
+          val = val.replace(/[<@>]/g, "");
+        }
+        args[key] = val;
+      }
     }
 
     // Auto-inject guild_id for Discord tools that need it

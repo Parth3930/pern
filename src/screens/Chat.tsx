@@ -185,7 +185,17 @@ export default function Chat({ config, onConfigUpdate }: Props) {
     const loadMemory = async () => {
       try {
         const memory = await api.getUserMemory();
-        setUserMemory(memory);
+        // Reset conversation summary to ensure per-chat history
+        const memoryWithEmptySummary = {
+          ...memory,
+          conversation_summary: "",
+        };
+        setUserMemory(memoryWithEmptySummary);
+        try {
+          await api.updateUserMemory(memoryWithEmptySummary);
+        } catch (e) {
+          console.error("[MEMORY] Failed to clear conversation summary on startup:", e);
+        }
       } catch (e) {
         console.error("[CHAT] Failed to load user memory:", e);
       }
@@ -960,6 +970,7 @@ export default function Chat({ config, onConfigUpdate }: Props) {
     }
 
     const trimmedInput = textToSend.trim();
+    const cleanInputForCommand = trimmedInput.replace(/[.?!\s]+$/, "").trim();
     console.log("[CHAT] User prompt:", trimmedInput);
     console.log("[CHAT][DIAG] handleSend started", {
       inputLength: trimmedInput.length,
@@ -968,7 +979,11 @@ export default function Chat({ config, onConfigUpdate }: Props) {
       pendingTools: !!pendingToolExecutionRef.current,
       messagesCount: messagesRef.current.length,
     });
-    if (/^(clear|clear chat)$/i.test(trimmedInput)) {
+    if (
+      /^(?:clear|clear\s+(?:the\s+)?chat(?:\s+.*)?|@clear(?:\s+.*)?|\/clear(?:\s+.*)?)$/i.test(
+        cleanInputForCommand,
+      )
+    ) {
       awaitingModelResponseRef.current = false;
       lastExecutedToolCallRef.current = null;
       emptyResponseRetryCountRef.current = 0;
@@ -979,13 +994,14 @@ export default function Chat({ config, onConfigUpdate }: Props) {
       setCurrentTask(null);
       setIsGenerating(false);
       lastToolResultRef.current = null;
-      // Also wipe the persisted summary so the next session starts clean
-      const clearedMemory = { ...userMemory, conversation_summary: "" };
+      // Wipe the persisted memory entirely so the next session starts completely clean
+      const clearedMemory = { name: null, persona: [], conversation_summary: "" };
       setUserMemory(clearedMemory);
       try {
         await api.updateUserMemory(clearedMemory);
+        console.log("[MEMORY] Cleared all memory (name, persona, and conversation summary) on user request.");
       } catch (e) {
-        console.error("[MEMORY] Failed to clear conversation summary:", e);
+        console.error("[MEMORY] Failed to clear memory:", e);
       }
       return;
     }
@@ -993,7 +1009,7 @@ export default function Chat({ config, onConfigUpdate }: Props) {
     if (
       pendingToolExecutionRef.current &&
       /^(yes|yeah|yep|ok|okay|sure|do it|go ahead|send|yes send|please do)\s*$/i.test(
-        trimmedInput,
+        cleanInputForCommand,
       )
     ) {
       await handleToolBatch(pendingToolExecutionRef.current);
@@ -1020,7 +1036,7 @@ export default function Chat({ config, onConfigUpdate }: Props) {
       memoryForTurn = updatedMemory;
       await api.updateUserMemory(updatedMemory);
       console.log("[MEMORY] Updated user name to:", detectedName);
-    } else if (/^(?:clear|reset) my name$/i.test(trimmedInput)) {
+    } else if (/^(?:clear|reset) my name$/i.test(cleanInputForCommand)) {
       const updatedMemory = { ...userMemory, name: null };
       setUserMemory(updatedMemory);
       memoryForTurn = updatedMemory;

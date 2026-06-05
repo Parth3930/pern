@@ -301,7 +301,7 @@ export function detectRequiredToolCategories(
   lastToolResult?: { tool: string; status: string },
 ): string[] {
   const categories = new Set<string>();
-  const normalized = userMessage.toLowerCase();
+  const normalized = userMessage.toLowerCase().replace(/[.?!\s]+$/, "").trim();
 
   // 1. WhatsApp Matcher
   const hasWhatsAppTermsOtherThanApp = /\b(message|msg|text|contact|auto[- ]?reply|auto[- ]?replies)\b/i.test(normalized) ||
@@ -335,7 +335,7 @@ export function detectRequiredToolCategories(
   }
 
   // 4. System Matcher
-  const isSystem = /\b(launch|open|close|start|run|quit|exit|chrome|notepad|calculator|app|system|pc|computer|uptime|health|restart|reboot|shut[- ]?down|shutdown|power[- ]?off|poweroff|drive|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint)\b/i.test(normalized);
+  const isSystem = /\b(launch|open|close|start|run|quit|exit|chrome|notepad|calculator|app|system|pc|computer|uptime|health|restart|reboot|shut[- ]?down|shutdown|power[- ]?off|poweroff|drive|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint|file manager|filemanager|files|explorer)\b/i.test(normalized);
   if (isSystem) {
     categories.add("system");
   }
@@ -784,11 +784,11 @@ export function detectActionIntent(
   text: string,
   recentMessages: ChatMessage[] = [],
 ): ActionIntent {
-  const normalized = text.toLowerCase().trim();
+  const normalized = text.toLowerCase().replace(/[.?!\s]+$/, "").trim();
 
 const commandPatterns = [
   /\b[a-zA-Z\s]+-\s*\+?[0-9\s-]{8,}\b/i,
-  /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
+  /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|file manager|filemanager|files|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
   /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent)\b/i,
   /\b(add|save|create|configure|setup|set up)\b.{0,30}\b(contact|whatsapp contact|email config|smtp)\b/i,
   /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(auto[- ]?reply|whatsapp|it)\b/i,

@@ -637,6 +637,15 @@ fn sanitize_requested_app_name(input: &str) -> String {
         name = name[..name.len() - 8].trim().to_string();
     }
 
+    let final_lower = name.to_lowercase();
+    if final_lower == "file manager"
+        || final_lower == "filemanager"
+        || final_lower == "files"
+        || final_lower == "file explorer"
+    {
+        name = "explorer".to_string();
+    }
+
     name
 }
 

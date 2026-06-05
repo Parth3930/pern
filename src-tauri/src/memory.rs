@@ -8,9 +8,7 @@ pub struct UserMemory {
 }
 
 pub fn update_memory(config: &mut crate::storage::AppConfig, new_info: UserMemory) {
-    if let Some(name) = new_info.name {
-        config.user_memory.name = Some(name);
-    }
+    config.user_memory.name = new_info.name;
     // Replace persona entirely (frontend sends the complete current state, not incremental additions).
     // Previously used extend() which caused exponential growth (each save doubled the entries).
     config.user_memory.persona = new_info.persona;

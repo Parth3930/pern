@@ -178,6 +178,9 @@ pub fn load_config() -> AppConfig {
                         }
                     }
 
+                    // Clear conversation summary on startup/load to ensure per-chat history
+                    config.user_memory.conversation_summary = String::new();
+
                     if dirty {
                         let _ = save_config(&config);
                     }
