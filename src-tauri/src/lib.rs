@@ -360,6 +360,8 @@ pub fn run() {
             commands::add_project,
             commands::remove_project,
             commands::list_projects,
+            commands::set_autostart,
+            commands::get_autostart,
             send_chat_message
         ])
         .build(tauri::generate_context!())

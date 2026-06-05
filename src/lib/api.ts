@@ -259,6 +259,10 @@ export const api = {
     invoke<void>("remove_project", { name }),
   listProjects: () => invoke<ProjectConfig[]>("list_projects"),
 
+  // Windows Autostart
+  getAutostart: () => invoke<boolean>("get_autostart"),
+  setAutostart: (enabled: boolean) => invoke<void>("set_autostart", { enabled }),
+
   onCLIAgentComplete: (
     cb: (data: {
       agent: string;

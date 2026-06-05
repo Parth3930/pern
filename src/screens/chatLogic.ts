@@ -138,11 +138,14 @@ export function extractToolCalls(content: string, userMessage?: string): ToolCal
 }
 
 export function stripToolCalls(content: string): string {
-  // Strip tool result prefix (UI-only feedback marker)
-  if (content.startsWith("[TOOL_RESULT] ")) {
-    content = content.slice("[TOOL_RESULT] ".length);
-  }
   let lines = content.split("\n");
+  lines = lines.map(line => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[TOOL_RESULT] ")) {
+      return trimmed.slice("[TOOL_RESULT] ".length);
+    }
+    return line;
+  });
   lines = lines.filter(line => {
     const trimmed = line.trim();
     return !trimmed.startsWith("Plan:") && !trimmed.startsWith("-") && trimmed !== "<plan>" && trimmed !== "</plan>";
@@ -156,15 +159,30 @@ export function sanitizeMessageForModel(
   if (message.role === "system" && message.content.startsWith("Tool Result:")) {
     return null;
   }
-  // Filter out tool result messages — they are UI feedback only, not model context
-  if (message.role === "assistant" && message.content.startsWith("[TOOL_RESULT] ")) {
-    return null;
-  }
   if (message.role !== "assistant") {
     return message;
   }
-  const cleanContent = stripToolCalls(message.content);
-  return cleanContent ? { ...message, content: cleanContent } : null;
+
+  const content = message.content;
+  const hasToolCalls = content.split("\n").some(line => line.trim().startsWith("-"));
+
+  if (hasToolCalls) {
+    // Keep only the tool call/plan lines, strip UI/tool results
+    let lines = content.split("\n");
+    lines = lines.filter(line => {
+      const trimmed = line.trim();
+      return trimmed.startsWith("Plan:") || trimmed.startsWith("-") || trimmed === "<plan>" || trimmed === "</plan>";
+    });
+    const cleanContent = lines.join("\n").trim();
+    return cleanContent ? { ...message, content: cleanContent } : null;
+  } else {
+    // Conversational assistant message: keep as-is, just strip [TOOL_RESULT] prefix if any
+    let clean = content;
+    if (clean.startsWith("[TOOL_RESULT] ")) {
+      clean = clean.slice("[TOOL_RESULT] ".length).trim();
+    }
+    return clean ? { ...message, content: clean } : null;
+  }
 }
 
 export interface CompactionResult {
@@ -287,9 +305,11 @@ export function detectRequiredToolCategories(
 
   // 1. WhatsApp Matcher
   const hasWhatsAppTermsOtherThanApp = /\b(message|msg|text|contact|auto[- ]?reply|auto[- ]?replies)\b/i.test(normalized) ||
+                                       /\b(tell|ask|say|send|msg|message|text)\b.{0,30}\b(him|her|them|mom|dad|brother|sister|friend|parth|samarth|rahul|chirag|rover)\b/i.test(normalized) ||
                                        (whatsappContacts && whatsappContacts.some(c => normalized.includes(c.name.toLowerCase())));
   const onlyWhatsAppAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,10}\bwhatsapp\b/i.test(normalized) && !hasWhatsAppTermsOtherThanApp;
   const isWhatsApp = (/\b(whatsapp|message|msg|text|contact|auto[- ]?reply|auto[- ]?replies)\b/i.test(normalized) ||
+                      /\b(tell|ask|say|send|msg|message|text)\b.{0,30}\b(him|her|them|mom|dad|brother|sister|friend|parth|samarth|rahul|chirag|rover)\b/i.test(normalized) ||
                       (whatsappContacts && whatsappContacts.some(c => normalized.includes(c.name.toLowerCase())))) && !onlyWhatsAppAsApp;
   if (isWhatsApp) {
     categories.add("whatsapp");
@@ -315,7 +335,7 @@ export function detectRequiredToolCategories(
   }
 
   // 4. System Matcher
-  const isSystem = /\b(launch|open|close|start|run|quit|exit|chrome|notepad|calculator|app|system|pc|computer|uptime|health|restart|reboot|shutdown|power[- ]?off|poweroff|drive|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint)\b/i.test(normalized);
+  const isSystem = /\b(launch|open|close|start|run|quit|exit|chrome|notepad|calculator|app|system|pc|computer|uptime|health|restart|reboot|shut[- ]?down|shutdown|power[- ]?off|poweroff|drive|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint)\b/i.test(normalized);
   if (isSystem) {
     categories.add("system");
   }
@@ -769,10 +789,10 @@ export function detectActionIntent(
 const commandPatterns = [
   /\b[a-zA-Z\s]+-\s*\+?[0-9\s-]{8,}\b/i,
   /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
-  /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent)\b/i,
+  /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent)\b/i,
   /\b(add|save|create|configure|setup|set up)\b.{0,30}\b(contact|whatsapp contact|email config|smtp)\b/i,
   /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(auto[- ]?reply|whatsapp|it)\b/i,
-  /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(mom|parth|him|her|them|rahul|chirag|rover)\b/i,
+  /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(mom|parth|samarth|him|her|them|rahul|chirag|rover)\b/i,
   /\b(set|change|update)\b.{0,30}\b(discord)\b.{0,30}\b(status|activity|presence)\b/i,
   /\b(is|check|what is|what's)\b.{0,20}(claude|hermes|codex|agy|free.?bu)\w*\b.{0,20}\b(running|status|doing|working|active|available|busy)\b/i,
   /\b(tell|ask|send|instruct|prompt|fire|run|execute|trigger|invoke|give)\b.{0,30}(claude|hermes|codex|agy|free.?bu)\w*\b.{0,60}\b(to|and|:|in|on|of|for|with)\b/i,
@@ -781,7 +801,8 @@ const commandPatterns = [
   /(free.?bu\w*|hermes|claude.?code|codex|agy)\b.{0,30}\b(do|run|execute|perform|check|send|write|create|make|build|fix|update|install|configure|say|tell|message|fetch)\b/i,
   /\b(give|fire|send|run|execute|trigger|instruct|tell|ask)\b.{0,40}\b(a|the|this)\b.{0,30}(free.?bu\w*|hermes|claude.?code|codex|agy)\b.{0,50}\b(to|and|:)\b.{0,50}\b(task|prompt|command|hi|hello|say|do|run|execute|check|write|make|build|install|update)\b/i,
   /\b(can you|could you|please|pls|need|need you to|want|want you to|i need|i want|would you|could you please|can you please)\b.{0,50}\b(send|message|text|email|open|launch|close|ask|tell|say)\b/i,
-  /\b(ask|tell|message|text)\b.{0,20}\b(him|her|them|parth|rahul|mom|dad|chirag|rover)\b/i,
+  /\b(ask|tell|message|text)\b.{0,20}\b(him|her|them|parth|samarth|rahul|mom|dad|chirag|rover)\b/i,
+  /\b(send|message|text|email)\b.{0,20}\b(the same|same|it|them|him|her)\b/i,
   /\b(shutdown|shut down|reboot|restart|power off|poweroff)\b/i,
 ];
 
@@ -797,7 +818,7 @@ const commandPatterns = [
       if (message.role !== "assistant") continue;
       const assistantText = message.content.toLowerCase();
       if (
-        /\b(send|message|email|open|launch|close|save|configure|add contact|ask|tell)\b/.test(
+        /\b(send|message|email|open|launch|close|save|configure|add contact|ask|tell|reply|auto[- ]?reply)\b/.test(
           assistantText,
         )
       ) {

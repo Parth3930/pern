@@ -2061,3 +2061,82 @@ pub async fn shutdown_system(window: Window) -> Result<serde_json::Value, String
         }
     }
 }
+
+#[tauri::command]
+pub async fn set_autostart(enabled: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        use std::os::windows::process::CommandExt;
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+        let exe_path_str = exe_path.to_string_lossy();
+
+        if enabled {
+            let mut cmd = Command::new("reg");
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            let status = cmd
+                .args(&[
+                    "add",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Pern",
+                    "/t",
+                    "REG_SZ",
+                    "/d",
+                    &format!("\"{}\"", exe_path_str),
+                    "/f",
+                ])
+                .status()
+                .map_err(|e| format!("Failed to execute reg.exe: {}", e))?;
+
+            if !status.success() {
+                return Err("reg.exe command failed to add autostart entry".to_string());
+            }
+        } else {
+            let mut cmd = Command::new("reg");
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            let _ = cmd
+                .args(&[
+                    "delete",
+                    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                    "/v",
+                    "Pern",
+                    "/f",
+                ])
+                .status();
+        }
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = enabled;
+        Err("Autostart is only supported on Windows".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn get_autostart() -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        use std::os::windows::process::CommandExt;
+        let mut cmd = Command::new("reg");
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let output = cmd
+            .args(&[
+                "query",
+                "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                "/v",
+                "Pern",
+            ])
+            .output()
+            .map_err(|e| format!("Failed to execute reg.exe: {}", e))?;
+
+        Ok(output.status.success())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(false)
+    }
+}

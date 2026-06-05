@@ -256,6 +256,11 @@ fn clean_number(input: &str) -> String {
     input.chars().filter(|c| c.is_ascii_digit()).collect()
 }
 
+fn is_phone_number(input: &str) -> bool {
+    let cleaned = clean_number(input);
+    !cleaned.is_empty() && !input.chars().any(|c| c.is_alphabetic())
+}
+
 fn normalize_name(input: &str) -> String {
     input
         .to_lowercase()
@@ -271,6 +276,128 @@ fn normalize_key(input: &str) -> String {
         .chars()
         .filter(|c| c.is_alphanumeric())
         .collect::<String>()
+}
+
+fn to_alphabetic_key(s: &str) -> String {
+    s.to_lowercase()
+        .chars()
+        .filter(|c| c.is_alphabetic())
+        .collect()
+}
+
+fn levenshtein_distance(a: &str, b: &str) -> usize {
+    let a_chars: Vec<char> = a.chars().collect();
+    let b_chars: Vec<char> = b.chars().collect();
+    let len_a = a_chars.len();
+    let len_b = b_chars.len();
+
+    if len_a == 0 { return len_b; }
+    if len_b == 0 { return len_a; }
+
+    let mut dp = vec![vec![0; len_b + 1]; len_a + 1];
+
+    for i in 0..=len_a { dp[i][0] = i; }
+    for j in 0..=len_b { dp[0][j] = j; }
+
+    for i in 1..=len_a {
+        for j in 1..=len_b {
+            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            dp[i][j] = std::cmp::min(
+                std::cmp::min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+                dp[i - 1][j - 1] + cost
+            );
+        }
+    }
+
+    dp[len_a][len_b]
+}
+
+fn substring_levenshtein(sub: &str, full: &str) -> usize {
+    let sub_len = sub.chars().count();
+    let full_len = full.chars().count();
+    if sub_len >= full_len {
+        return levenshtein_distance(sub, full);
+    }
+    
+    let mut min_dist = usize::MAX;
+    let full_chars: Vec<char> = full.chars().collect();
+    for i in 0..=(full_len - sub_len) {
+        let window: String = full_chars[i..(i + sub_len)].iter().collect();
+        let dist = levenshtein_distance(sub, &window);
+        if dist < min_dist {
+            min_dist = dist;
+        }
+    }
+    min_dist
+}
+
+fn find_contact_index_by_recipient(recipient: &str, contacts: &[WhatsAppContact]) -> Option<usize> {
+    let is_num = is_phone_number(recipient);
+    let cleaned_recipient = clean_number(recipient);
+
+    if is_num {
+        contacts.iter().position(|c| {
+            let cn = clean_number(&c.number);
+            !cn.is_empty() && (
+                cn == cleaned_recipient
+                    || cleaned_recipient.contains(&cn)
+                    || cn.contains(&cleaned_recipient)
+            )
+        })
+    } else {
+        let recipient_norm = normalize_name(recipient);
+        let recipient_key = normalize_key(recipient);
+
+        // First pass: Try exact/substring match on normalized name and keys
+        if let Some(idx) = contacts.iter().position(|c| {
+            let name_norm = normalize_name(&c.name);
+            let name_key = normalize_key(&c.name);
+            !name_norm.is_empty() && (
+                name_norm == recipient_norm
+                    || name_norm.contains(&recipient_norm)
+                    || recipient_norm.contains(&name_norm)
+                    || (!name_key.is_empty()
+                        && (name_key == recipient_key
+                            || name_key.contains(&recipient_key)
+                            || recipient_key.contains(&name_key)))
+            )
+        }) {
+            return Some(idx);
+        }
+
+        // Second pass: Sliding window Levenshtein-based fuzzy match (fallback)
+        let r_alpha = to_alphabetic_key(recipient);
+        if r_alpha.is_empty() {
+            return None;
+        }
+
+        let mut best_match: Option<(usize, usize)> = None;
+
+        for (idx, contact) in contacts.iter().enumerate() {
+            let c_alpha = to_alphabetic_key(&contact.name);
+            if c_alpha.is_empty() {
+                continue;
+            }
+
+            let dist = substring_levenshtein(&r_alpha, &c_alpha);
+            let threshold = if r_alpha.len() <= 4 { 1 } else { 2 };
+
+            if dist <= threshold {
+                match best_match {
+                    None => {
+                        best_match = Some((idx, dist));
+                    }
+                    Some((_, best_dist)) => {
+                        if dist < best_dist {
+                            best_match = Some((idx, dist));
+                        }
+                    }
+                }
+            }
+        }
+
+        best_match.map(|(idx, _)| idx)
+    }
 }
 
 async fn get_current_client(state: &AppState) -> Option<Arc<Client>> {
@@ -1198,24 +1325,15 @@ pub async fn internal_send_whatsapp_message(
     state: &AppState,
 ) -> Result<(), String> {
     let config = state.config.lock().await;
-    let cleaned_recipient = clean_number(&recipient);
+    let is_num = is_phone_number(&recipient);
 
     // 1. Resolve target number
-    let target_number = if !cleaned_recipient.is_empty() {
-        cleaned_recipient
+    let target_number = if is_num {
+        clean_number(&recipient)
     } else {
-        let recipient_lower = recipient.to_lowercase();
-        config
-            .whatsapp_contacts
-            .iter()
-            .find(|c| {
-                let name_lower = c.name.to_lowercase();
-                name_lower == recipient_lower
-                    || name_lower.contains(&recipient_lower)
-                    || recipient_lower.contains(&name_lower)
-            })
-            .map(|c| c.number.clone())
-            .ok_or_else(|| format!("Contact '{}' not found.", recipient))?
+        let idx = find_contact_index_by_recipient(&recipient, &config.whatsapp_contacts)
+            .ok_or_else(|| format!("Contact '{}' not found.", recipient))?;
+        config.whatsapp_contacts[idx].number.clone()
     };
 
     // 2. Check if allowed
@@ -1316,37 +1434,14 @@ pub async fn internal_set_whatsapp_contact_auto_reply(
     state: &AppState,
 ) -> Result<String, String> {
     let mut config = state.config.lock().await;
+    let is_num = is_phone_number(&recipient);
     let cleaned_recipient = clean_number(&recipient);
 
     println!("[WHATSAPP DEBUG] set auto-reply lookup for: '{}', cleaned: '{}', enabled: {}", recipient, cleaned_recipient, enabled);
     println!("[WHATSAPP DEBUG] contacts in config: {:?}", config.whatsapp_contacts.iter().map(|c| format!("name={}, number={}", c.name, c.number)).collect::<Vec<_>>());
 
-    let contact = if !cleaned_recipient.is_empty() {
-        config.whatsapp_contacts.iter_mut().find(|c| {
-            let cn = clean_number(&c.number);
-            !cn.is_empty() && (
-                cn == cleaned_recipient
-                    || cleaned_recipient.contains(&cn)
-                    || cn.contains(&cleaned_recipient)
-            )
-        })
-    } else {
-        let recipient_norm = normalize_name(&recipient);
-        let recipient_key = normalize_key(&recipient);
-        config.whatsapp_contacts.iter_mut().find(|c| {
-            let name_norm = normalize_name(&c.name);
-            let name_key = normalize_key(&c.name);
-            !name_norm.is_empty() && (
-                name_norm == recipient_norm
-                    || name_norm.contains(&recipient_norm)
-                    || recipient_norm.contains(&name_norm)
-                    || (!name_key.is_empty()
-                        && (name_key == recipient_key
-                            || name_key.contains(&recipient_key)
-                            || recipient_key.contains(&name_key)))
-            )
-        })
-    };
+    let idx = find_contact_index_by_recipient(&recipient, &config.whatsapp_contacts);
+    let contact = idx.map(|i| &mut config.whatsapp_contacts[i]);
 
     if let Some(contact) = contact {
         contact.auto_reply_enabled = enabled;
@@ -1365,45 +1460,23 @@ pub async fn internal_toggle_whatsapp_contact_auto_reply(
     state: &AppState,
 ) -> Result<(String, bool), String> {
     let mut config = state.config.lock().await;
+    let is_num = is_phone_number(&recipient);
     let cleaned_recipient = clean_number(&recipient);
 
     println!("[WHATSAPP DEBUG] toggle auto-reply lookup for: '{}', cleaned: '{}'", recipient, cleaned_recipient);
     println!("[WHATSAPP DEBUG] contacts in config: {:?}", config.whatsapp_contacts.iter().map(|c| format!("name={}, number={}", c.name, c.number)).collect::<Vec<_>>());
 
-    let contact = if !cleaned_recipient.is_empty() {
-        let contact = config.whatsapp_contacts.iter_mut().find(|c| {
-            let cn = clean_number(&c.number);
-            !cn.is_empty() && (
-                cn == cleaned_recipient
-                    || cleaned_recipient.contains(&cn)
-                    || cn.contains(&cleaned_recipient)
-            )
-        });
-        if contact.is_none() {
+    let idx = find_contact_index_by_recipient(&recipient, &config.whatsapp_contacts);
+    if idx.is_none() {
+        if is_num {
             println!("[WHATSAPP DEBUG] toggle auto-reply number match failed for cleaned='{}'", cleaned_recipient);
-        }
-        contact
-    } else {
-        let recipient_norm = normalize_name(&recipient);
-        let recipient_key = normalize_key(&recipient);
-        let contact = config.whatsapp_contacts.iter_mut().find(|c| {
-            let name_norm = normalize_name(&c.name);
-            let name_key = normalize_key(&c.name);
-            !name_norm.is_empty() && (
-                name_norm == recipient_norm
-                    || name_norm.contains(&recipient_norm)
-                    || recipient_norm.contains(&name_norm)
-                    || (!name_key.is_empty()
-                        && (name_key == recipient_key
-                            || name_key.contains(&recipient_key)
-                            || recipient_key.contains(&name_key)))
-            )
-        });
-        if contact.is_none() {
+        } else {
+            let recipient_norm = normalize_name(&recipient);
+            let recipient_key = normalize_key(&recipient);
             println!("[WHATSAPP DEBUG] toggle auto-reply name match failed for recipient='{}', norm='{}', key='{}'", recipient, recipient_norm, recipient_key);
         }
-        contact
-    };
+    }
+    let contact = idx.map(|i| &mut config.whatsapp_contacts[i]);
 
     if let Some(contact) = contact {
         contact.auto_reply_enabled = !contact.auto_reply_enabled;

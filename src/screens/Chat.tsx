@@ -25,9 +25,9 @@ import {
   getNumberArg,
   getStringArg,
   getBooleanArg,
-  replacePendingToolMessage,
   stripToolCalls,
   validateEmailToolArgs,
+  removeTrailingAssistantMessage,
 } from "./chatLogic";
 
 const cleanUserMessageForDisplay = (content: string) => {
@@ -46,7 +46,10 @@ const cleanUserMessageForDisplay = (content: string) => {
     return userReq.trim();
   }
 
-  if (content.startsWith("[Context:\n") || content.startsWith("[Owner context:")) {
+  if (
+    content.startsWith("[Context:\n") ||
+    content.startsWith("[Owner context:")
+  ) {
     const idx = content.indexOf("]\n\n");
     if (idx !== -1) {
       return content.slice(idx + 3);
@@ -84,7 +87,7 @@ export default function Chat({ config, onConfigUpdate }: Props) {
   const lastToolResultRef = useRef<{ tool: string; status: string } | null>(
     null,
   );
-const NON_NAME_SELF_DESCRIPTORS = new Set([
+  const NON_NAME_SELF_DESCRIPTORS = new Set([
     "bored",
     "busy",
     "confused",
@@ -136,8 +139,12 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
       return "";
     }
 
-    const clipped = trimmed.length > 800 ? `${trimmed.slice(0, 800)}...` : trimmed;
-    const quoted = clipped.split("\n").map((line) => `> ${line}`).join("\n");
+    const clipped =
+      trimmed.length > 800 ? `${trimmed.slice(0, 800)}...` : trimmed;
+    const quoted = clipped
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
     return `\n\n**${label}:**\n${quoted}`;
   };
 
@@ -149,7 +156,8 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
       // Listen for CLI agent task completions
       unsubCLIAgent = await api.onCLIAgentComplete((data) => {
         console.log("[CHAT] CLI agent completion received:", data);
-        const outputLabel = data.status === "completed" ? "Output" : "Error output";
+        const outputLabel =
+          data.status === "completed" ? "Output" : "Error output";
         const outputBlock = formatCLIAgentOutput(data.output, outputLabel);
         const emoji = data.status === "completed" ? "✅" : "❌";
         let summaryPart = "";
@@ -281,7 +289,11 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
         awaitingModelResponseRef.current = false;
 
         const content = accumulatedContent.trim();
-        console.log("[CHAT][DIAG] Model raw output:", { length: content.length, preview: content.slice(0, 200), intent: latestIntentRef.current });
+        console.log("[CHAT][DIAG] Model raw output:", {
+          length: content.length,
+          preview: content.slice(0, 200),
+          intent: latestIntentRef.current,
+        });
         accumulatedContent = "";
 
         try {
@@ -289,18 +301,20 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
             .reverse()
             .find((m) => m.role === "user")?.content;
           const toolCalls = extractToolCalls(content, lastUserMsg);
-          console.log("[CHAT][DIAG] Tool extraction", { parsedToolCalls: toolCalls.length, toolNames: toolCalls.map(t => t.tool), intent: latestIntentRef.current });
+          console.log("[CHAT][DIAG] Tool extraction", {
+            parsedToolCalls: toolCalls.length,
+            toolNames: toolCalls.map((t) => t.tool),
+            intent: latestIntentRef.current,
+          });
 
           if (toolCalls.length > 0 && latestIntentRef.current === "action") {
-            console.log("[CHAT][DIAG] Action intent + tools found → executing tool batch");
+            console.log(
+              "[CHAT][DIAG] Action intent + tools found → executing tool batch",
+            );
             pendingToolExecutionRef.current = toolCalls;
             lastExecutedToolCallRef.current = null;
-            // If the model output tools, we clean up the assistant message
-            // and execute the tools.
-            const nextMessages = replacePendingToolMessage(messagesRef.current);
-            messagesRef.current = nextMessages;
-            setMessages(nextMessages);
             await handleToolBatch(toolCalls);
+            pendingToolExecutionRef.current = null;
           } else {
             // intent=chat or no tool calls
             if (toolCalls.length > 0) {
@@ -308,9 +322,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                 "[CHAT][DIAG] MISMATCH: Model output tools but intent=chat — retrying with chat-only prompt.",
               );
               // Strip the bad message and retry once so the user gets a real reply
-              const stripped = (nextMessages: ChatMessage[]) =>
-                replacePendingToolMessage(nextMessages);
-              const nextMsgs = stripped(messagesRef.current);
+              const nextMsgs = removeTrailingAssistantMessage(messagesRef.current);
               messagesRef.current = nextMsgs;
               setMessages(nextMsgs);
 
@@ -326,24 +338,6 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                     undefined,
                     configRef.current.whatsapp_contacts,
                   );
-
-                  // Update the last user message in React state to include the context (keeps cache matching across turns)
-                  if (retryHistory.messages.length > 0 && retryHistory.wrappedUserMessage) {
-                    setMessages((prev) => {
-                      const next = [...prev];
-                      for (let i = next.length - 1; i >= 0; i -= 1) {
-                        if (next[i].role === "user") {
-                          next[i] = {
-                            ...next[i],
-                            content: retryHistory.wrappedUserMessage!,
-                          };
-                          break;
-                        }
-                      }
-                      messagesRef.current = next;
-                      return next;
-                    });
-                  }
 
                   awaitingModelResponseRef.current = true;
                   await api.sendChatMessage(
@@ -366,7 +360,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
               emptyResponseRetryCountRef.current += 1;
 
               // Keep the current history but nudge for JSON
-              const nextMsgs = replacePendingToolMessage(messagesRef.current);
+              const nextMsgs = removeTrailingAssistantMessage(messagesRef.current);
               messagesRef.current = nextMsgs;
               setMessages(nextMsgs);
 
@@ -380,24 +374,6 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                   undefined,
                   configRef.current.whatsapp_contacts,
                 );
-
-                // Update the last user message in React state to include the context (keeps cache matching across turns)
-                if (retryHistory.messages.length > 0 && retryHistory.wrappedUserMessage) {
-                  setMessages((prev) => {
-                    const next = [...prev];
-                    for (let i = next.length - 1; i >= 0; i -= 1) {
-                      if (next[i].role === "user") {
-                        next[i] = {
-                          ...next[i],
-                          content: retryHistory.wrappedUserMessage!,
-                        };
-                        break;
-                      }
-                    }
-                    messagesRef.current = next;
-                    return next;
-                  });
-                }
 
                 // Add a final system nudge for JSON
                 retryHistory.messages.push({
@@ -416,7 +392,7 @@ const NON_NAME_SELF_DESCRIPTORS = new Set([
                 console.error("[CHAT] Action retry failed:", retryErr);
               }
             }
-pendingToolExecutionRef.current = null;
+            pendingToolExecutionRef.current = null;
             emptyResponseRetryCountRef.current = 0;
             // If we exhausted retries without a valid response, show a fallback
             setMessages((prev) => {
@@ -469,7 +445,13 @@ pendingToolExecutionRef.current = null;
   }, []);
 
   const handleToolBatch = async (toolCalls: ToolCall[]) => {
-    console.log("[CHAT][DIAG] handleToolBatch START", { toolCount: toolCalls.length, tools: toolCalls.map(t => ({ tool: t.tool, argsKeys: Object.keys(t.args) })) });
+    console.log("[CHAT][DIAG] handleToolBatch START", {
+      toolCount: toolCalls.length,
+      tools: toolCalls.map((t) => ({
+        tool: t.tool,
+        argsKeys: Object.keys(t.args),
+      })),
+    });
     const callsSig = JSON.stringify(toolCalls);
     if (lastExecutedToolCallRef.current === callsSig) {
       setCurrentTask(null);
@@ -546,17 +528,28 @@ pendingToolExecutionRef.current = null;
             needsConfigRefresh = true;
           }
         } else if (tc.tool === "set_whatsapp_auto_reply") {
-          const recipient = getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
+          const recipient =
+            getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
           const enabled = getBooleanArg(tc.args, "enabled");
           if (!recipient || enabled === undefined) {
-            result = { ok: false, error: "Recipient or enabled status missing." };
+            result = {
+              ok: false,
+              error: "Recipient or enabled status missing.",
+            };
           } else {
-            const actualName = await api.setWhatsAppAutoReply(recipient, enabled);
-            result = { ok: true, status: `Auto-reply ${enabled ? "enabled" : "disabled"} for contact ${actualName} on WhatsApp.` };
+            const actualName = await api.setWhatsAppAutoReply(
+              recipient,
+              enabled,
+            );
+            result = {
+              ok: true,
+              status: `Auto-reply ${enabled ? "enabled" : "disabled"} for contact ${actualName} on WhatsApp.`,
+            };
             needsConfigRefresh = true;
           }
         } else if (tc.tool === "toggle_whatsapp_auto_reply") {
-          const recipient = getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
+          const recipient =
+            getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
           if (!recipient) {
             result = { ok: false, error: "Recipient missing." };
           } else {
@@ -663,7 +656,8 @@ pendingToolExecutionRef.current = null;
           const guildId = getStringArg(tc.args, "guild_id");
           const userId = getStringArg(tc.args, "user_id");
           const reason = getStringArg(tc.args, "reason") || undefined;
-          const deleteSecs = getNumberArg(tc.args, "delete_message_seconds") || undefined;
+          const deleteSecs =
+            getNumberArg(tc.args, "delete_message_seconds") || undefined;
           if (!guildId || !userId) {
             result = { ok: false, error: "Guild ID or User ID missing." };
           } else {
@@ -685,7 +679,10 @@ pendingToolExecutionRef.current = null;
           const duration = getNumberArg(tc.args, "duration_mins");
           const reason = getStringArg(tc.args, "reason") || undefined;
           if (!guildId || !userId || duration === null) {
-            result = { ok: false, error: "Guild ID, User ID, or duration missing." };
+            result = {
+              ok: false,
+              error: "Guild ID, User ID, or duration missing.",
+            };
           } else {
             await api.discordMute(guildId, userId, duration, reason);
             result = { ok: true };
@@ -713,7 +710,10 @@ pendingToolExecutionRef.current = null;
           const channelId = getStringArg(tc.args, "channel_id");
           const count = getNumberArg(tc.args, "count");
           if (!channelId || count === null) {
-            result = { ok: false, error: "Channel ID or message count missing." };
+            result = {
+              ok: false,
+              error: "Channel ID or message count missing.",
+            };
           } else {
             await api.discordDeleteMessages(channelId, count);
             result = { ok: true };
@@ -723,7 +723,10 @@ pendingToolExecutionRef.current = null;
           const userId = getStringArg(tc.args, "user_id");
           const roleId = getStringArg(tc.args, "role_id");
           if (!guildId || !userId || !roleId) {
-            result = { ok: false, error: "Guild ID, User ID, or Role ID missing." };
+            result = {
+              ok: false,
+              error: "Guild ID, User ID, or Role ID missing.",
+            };
           } else {
             await api.discordAssignRole(guildId, userId, roleId);
             result = { ok: true };
@@ -733,7 +736,10 @@ pendingToolExecutionRef.current = null;
           const userId = getStringArg(tc.args, "user_id");
           const roleId = getStringArg(tc.args, "role_id");
           if (!guildId || !userId || !roleId) {
-            result = { ok: false, error: "Guild ID, User ID, or Role ID missing." };
+            result = {
+              ok: false,
+              error: "Guild ID, User ID, or Role ID missing.",
+            };
           } else {
             await api.discordRemoveRole(guildId, userId, roleId);
             result = { ok: true };
@@ -755,9 +761,16 @@ pendingToolExecutionRef.current = null;
           const channelName = getStringArg(tc.args, "channel_name");
           const message = getStringArg(tc.args, "message");
           if (!guildId || !channelName || !message) {
-            result = { ok: false, error: "Guild ID, channel name, or message missing." };
+            result = {
+              ok: false,
+              error: "Guild ID, channel name, or message missing.",
+            };
           } else {
-            const status = await api.discordSendChannelMessage(guildId, channelName, message);
+            const status = await api.discordSendChannelMessage(
+              guildId,
+              channelName,
+              message,
+            );
             result = { ok: true, message: status };
           }
         } else if (tc.tool === "discord_get_channels") {
@@ -770,13 +783,25 @@ pendingToolExecutionRef.current = null;
               let list = "Here are the channels in this server:\n";
               for (const c of channelsVal) {
                 if (c.name) {
-                  const typeStr = c.type === 0 ? "text" : c.type === 2 ? "voice" : c.type === 4 ? "category" : c.type === 5 ? "announcement" : "other";
+                  const typeStr =
+                    c.type === 0
+                      ? "text"
+                      : c.type === 2
+                        ? "voice"
+                        : c.type === 4
+                          ? "category"
+                          : c.type === 5
+                            ? "announcement"
+                            : "other";
                   list += `- **#${c.name}** (ID: \`${c.id}\`, Type: ${typeStr})\n`;
                 }
               }
               result = { ok: true, message: list };
             } else {
-              result = { ok: true, message: "Could not retrieve channel list." };
+              result = {
+                ok: true,
+                message: "Could not retrieve channel list.",
+              };
             }
           }
         } else if (tc.tool === "set_discord_behaviour_channel") {
@@ -801,14 +826,20 @@ pendingToolExecutionRef.current = null;
         } else if (tc.tool === "send_to_cli_agent") {
           const agentName = getStringArg(tc.args, "agent_name");
           const prompt = getStringArg(tc.args, "prompt");
-          const projectName = getStringArg(tc.args, "project_name") || undefined;
+          const projectName =
+            getStringArg(tc.args, "project_name") || undefined;
           if (!agentName || !prompt) {
             result = { ok: false, error: "Agent name or prompt missing." };
           } else {
             try {
-              const projectSuffix = projectName ? ` in project "${projectName}"` : "";
+              const projectSuffix = projectName
+                ? ` in project "${projectName}"`
+                : "";
               await api.sendToCLIAgent(agentName, prompt, projectName);
-              result = { ok: true, message: `Task sent to ${agentName}${projectSuffix}. I'll notify you when it completes.` };
+              result = {
+                ok: true,
+                message: `Task sent to ${agentName}${projectSuffix}. I'll notify you when it completes.`,
+              };
             } catch (e) {
               result = { ok: false, error: getErrorMessage(e) };
             }
@@ -827,18 +858,26 @@ pendingToolExecutionRef.current = null;
                       : a.status === "not_found"
                         ? "⚠️"
                         : "💤";
-              const taskStr = a.current_task ? ` (working on: ${a.current_task.slice(0, 60)})` : "";
+              const taskStr = a.current_task
+                ? ` (working on: ${a.current_task.slice(0, 60)})`
+                : "";
               return `${statusIcon} **${a.display_name}**: ${a.status}${taskStr}`;
             });
-            result = { ok: true, message: `**CLI Agent Status:**\n${lines.join("\n")}` };
+            result = {
+              ok: true,
+              message: `**CLI Agent Status:**\n${lines.join("\n")}`,
+            };
           } catch (e) {
             result = { ok: false, error: getErrorMessage(e) };
           }
         } else {
-          result = { ok: false, error: `Tool "${tc.tool}" is not implemented.` };
+          result = {
+            ok: false,
+            error: `Tool "${tc.tool}" is not implemented.`,
+          };
         }
 
-followUpMessages.push({
+        followUpMessages.push({
           role: "assistant",
           content: "[TOOL_RESULT] " + buildToolReply(tc, result),
         });
@@ -848,10 +887,9 @@ followUpMessages.push({
             status: `${tc.tool} succeeded`,
           };
           // Record tool usage for learning — fire-and-forget
-          api.recordToolUsage(
-            tc.tool,
-            JSON.stringify(tc.args).slice(0, 200),
-          ).catch((e) => console.warn("[LEARNER] Failed to record usage:", e));
+          api
+            .recordToolUsage(tc.tool, JSON.stringify(tc.args).slice(0, 200))
+            .catch((e) => console.warn("[LEARNER] Failed to record usage:", e));
         }
       } catch (error) {
         console.error(`[TOOL] Tool "${tc.tool}" threw an error:`, error);
@@ -882,10 +920,17 @@ followUpMessages.push({
       };
     }
     setMessages((prev) => {
-      const nextMessages = [
-        ...replacePendingToolMessage(prev),
-        ...followUpMessages,
-      ];
+      const nextMessages = [...prev];
+      const lastAssIdx = nextMessages.map((m) => m.role).lastIndexOf("assistant");
+      if (lastAssIdx !== -1) {
+        const resultsText = followUpMessages.map((m) => m.content).join("\n");
+        nextMessages[lastAssIdx] = {
+          ...nextMessages[lastAssIdx],
+          content: nextMessages[lastAssIdx].content.trim() + "\n" + resultsText,
+        };
+      } else {
+        nextMessages.push(...followUpMessages);
+      }
       messagesRef.current = nextMessages;
       return nextMessages;
     });
@@ -916,7 +961,13 @@ followUpMessages.push({
 
     const trimmedInput = textToSend.trim();
     console.log("[CHAT] User prompt:", trimmedInput);
-    console.log("[CHAT][DIAG] handleSend started", { inputLength: trimmedInput.length, isOverride: overrideInput !== undefined, isGenerating, pendingTools: !!pendingToolExecutionRef.current, messagesCount: messagesRef.current.length });
+    console.log("[CHAT][DIAG] handleSend started", {
+      inputLength: trimmedInput.length,
+      isOverride: overrideInput !== undefined,
+      isGenerating,
+      pendingTools: !!pendingToolExecutionRef.current,
+      messagesCount: messagesRef.current.length,
+    });
     if (/^(clear|clear chat)$/i.test(trimmedInput)) {
       awaitingModelResponseRef.current = false;
       lastExecutedToolCallRef.current = null;
@@ -1000,7 +1051,9 @@ followUpMessages.push({
       let relevantSkills: import("../lib/api").Skill[] = [];
       try {
         relevantSkills = await api.findRelevantSkills(trimmedInput);
-      } catch (_) { /* non-critical */ }
+      } catch (_) {
+        /* non-critical */
+      }
       console.log("[CHAT][DIAG] Skills found:", relevantSkills.length);
 
       const historyResult = buildConversationHistory(
@@ -1012,7 +1065,15 @@ followUpMessages.push({
         relevantSkills.length > 0 ? relevantSkills : undefined,
         config.whatsapp_contacts,
       );
-      console.log("[CHAT][DIAG] History built", { totalMessages: historyResult.messages.length, summaryLength: historyResult.summary.length, systemPromptPreview: historyResult.messages[0]?.content.slice(0, 120) + '...', lastUserMsgLength: historyResult.messages[historyResult.messages.length - 1]?.content.length });
+      console.log("[CHAT][DIAG] History built", {
+        totalMessages: historyResult.messages.length,
+        summaryLength: historyResult.summary.length,
+        systemPromptPreview:
+          historyResult.messages[0]?.content.slice(0, 120) + "...",
+        lastUserMsgLength:
+          historyResult.messages[historyResult.messages.length - 1]?.content
+            .length,
+      });
 
       if (historyResult.summary !== memoryForTurn.conversation_summary) {
         const updatedMemory = {
@@ -1024,27 +1085,22 @@ followUpMessages.push({
         await api.updateUserMemory(updatedMemory);
       }
 
-      // Update the user message in React state to include the context (keeps cache matching across turns)
-      if (historyResult.messages.length > 0 && historyResult.wrappedUserMessage) {
-        setMessages((prev) => {
-          const next = [...prev];
-          for (let i = next.length - 1; i >= 0; i -= 1) {
-            if (next[i].role === "user") {
-              next[i] = {
-                ...next[i],
-                content: historyResult.wrappedUserMessage!,
-              };
-              break;
-            }
-          }
-          messagesRef.current = next;
-          return next;
-        });
-      }
 
-      const totalChars = historyResult.messages.reduce((sum, m) => sum + m.content.length, 0);
-      console.log("[CHAT][DIAG] Sending to model", { model: config.selected_model, messageCount: historyResult.messages.length, totalChars, estimatedTokens: Math.round(totalChars / 4) });
-      console.log("[CHAT][DIAG] Message roles:", historyResult.messages.map(m => m.role));
+
+      const totalChars = historyResult.messages.reduce(
+        (sum, m) => sum + m.content.length,
+        0,
+      );
+      console.log("[CHAT][DIAG] Sending to model", {
+        model: config.selected_model,
+        messageCount: historyResult.messages.length,
+        totalChars,
+        estimatedTokens: Math.round(totalChars / 4),
+      });
+      console.log(
+        "[CHAT][DIAG] Message roles:",
+        historyResult.messages.map((m) => m.role),
+      );
       awaitingModelResponseRef.current = true;
       await api.sendChatMessage(config.selected_model, historyResult.messages);
     } catch (e) {
@@ -1168,7 +1224,9 @@ followUpMessages.push({
 
             return (
               <div key={i} className={`message ${msg.role}`}>
-                {msg.role === "assistant" ? assistantContent : cleanUserMessageForDisplay(msg.content)}
+                {msg.role === "assistant"
+                  ? assistantContent
+                  : cleanUserMessageForDisplay(msg.content)}
               </div>
             );
           })
@@ -1222,7 +1280,9 @@ followUpMessages.push({
                 }
               }}
               title={isListening ? "Stop listening" : "Start voice command"}
-              aria-label={isListening ? "Stop listening" : "Start voice command"}
+              aria-label={
+                isListening ? "Stop listening" : "Start voice command"
+              }
             >
               {isListening ? <Mic size={16} /> : <MicOff size={16} />}
             </button>
@@ -1237,7 +1297,9 @@ followUpMessages.push({
                 handleSend();
               }
             }}
-            placeholder={isListening ? "Listening to command…" : "Ask a question..."}
+            placeholder={
+              isListening ? "Listening to command…" : "Ask a question..."
+            }
             rows={1}
             style={{ height: "auto", minHeight: "24px" }}
           />

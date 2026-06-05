@@ -17,6 +17,9 @@ interface Props {
 }
 
 export default function SettingsPanel({ config, onClose, onSaved }: Props) {
+  const [isWindows, setIsWindows] = useState(false);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+
   const [modelDir, setModelDir] = useState(config.model_dir);
   const [smtpHost, setSmtpHost] = useState(config.email_smtp_host);
   const [smtpPort, setSmtpPort] = useState(config.email_smtp_port);
@@ -97,6 +100,18 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   useEffect(() => {
     api.listAvailableModels().then(setModels).catch(console.error);
     api.listInstalledModels().then(setInstalledFiles).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    api.getPlatformInfo()
+      .then((info) => {
+        const win = info.os === "windows";
+        setIsWindows(win);
+        if (win) {
+          api.getAutostart().then(setAutostartEnabled).catch(console.error);
+        }
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -234,6 +249,9 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
       await api.chooseModelDir(modelDir);
       await api.saveEmailConfig(smtpHost, smtpPort, senderEmail, smtpPassword);
       await api.toggleDiscord(discordEnabled, discordToken, discordStatus, discordActivity, discordOwnerId, discordBehaviourChannelId);
+      if (isWindows) {
+        await api.setAutostart(autostartEnabled);
+      }
       onSaved();
     } catch (e) {
       console.error("Failed to save settings", e);
@@ -245,6 +263,45 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   const renderMainContent = () => {
     return (
       <>
+        <section className="settings-section" style={{ borderBottom: "1px solid var(--border)", paddingBottom: "1.25rem", marginBottom: "0.5rem" }}>
+          <div className="settings-item">
+            <label className="settings-label" style={{ fontWeight: 600 }}>Model Directory</label>
+            <div className="minimal-path-input">
+              <input
+                type="text"
+                className="minimal-input"
+                value={modelDir}
+                onChange={(e) => setModelDir(e.target.value)}
+                placeholder="C:\Users\..."
+              />
+              <button type="button" className="icon-only-btn" onClick={handleSelectFolder} title="Browse folder">
+                <FolderOpen size={16} />
+              </button>
+            </div>
+          </div>
+
+          {isWindows && (
+            <div className="settings-item" style={{ marginTop: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                  <label className="settings-label" style={{ margin: 0, fontWeight: 600 }}>Start on Windows Open</label>
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+                    Automatically start Pern when you log into Windows
+                  </span>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={autostartEnabled}
+                    onChange={(e) => setAutostartEnabled(e.target.checked)}
+                  />
+                  <span className="slider"></span>
+                </label>
+              </div>
+            </div>
+          )}
+        </section>
+
         <WhatsAppSettings config={config} />
 
         <EmailSettings
@@ -381,22 +438,6 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
           {modelsExpanded && (
             <div className="settings-list animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div className="settings-item">
-                <label className="settings-label">Model Directory</label>
-                <div className="minimal-path-input">
-                  <input
-                    type="text"
-                    className="minimal-input"
-                    value={modelDir}
-                    onChange={(e) => setModelDir(e.target.value)}
-                    placeholder="C:\Users\..."
-                  />
-                  <button className="icon-only-btn" onClick={handleSelectFolder}>
-                    <FolderOpen size={16} />
-                  </button>
-                </div>
-              </div>
-
               <div className="model-settings-list" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {models.map((m) => {
                   const isDownloaded = installedFiles.includes(m.file_name);
