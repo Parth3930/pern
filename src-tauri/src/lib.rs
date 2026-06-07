@@ -178,6 +178,24 @@ pub fn run() {
             let state = app.state::<AppState>().inner().clone();
             let app_handle = app.handle().clone();
 
+            // Clear any debug autostart entry from registry on startup to prevent unwanted boot-time launch in debug mode
+            #[cfg(all(target_os = "windows", debug_assertions))]
+            {
+                println!("[AUTOSTART] Running in debug/dev mode. Cleaning up any autostart registry entries to prevent unwanted autostart...");
+                use std::os::windows::process::CommandExt;
+                let mut cmd = std::process::Command::new("reg");
+                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+                let _ = cmd
+                    .args(&[
+                        "delete",
+                        "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                        "/v",
+                        "Pern",
+                        "/f",
+                    ])
+                    .status();
+            }
+
             // Auto-start WhatsApp session if it was previously enabled
             let whatsapp_enabled = {
                 let config = tauri::async_runtime::block_on(async {

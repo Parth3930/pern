@@ -2077,6 +2077,13 @@ pub async fn set_autostart(enabled: bool) -> Result<(), String> {
     {
         use std::process::Command;
         use std::os::windows::process::CommandExt;
+
+        // Skip autostart registry modifications in debug/dev mode
+        if cfg!(debug_assertions) {
+            println!("[AUTOSTART] Autostart registration is bypassed in debug/dev mode.");
+            return Ok(());
+        }
+
         let exe_path = std::env::current_exe()
             .map_err(|e| format!("Failed to get current executable path: {}", e))?;
         let exe_path_str = exe_path.to_string_lossy();
