@@ -1,9 +1,7 @@
-use crate::chat::{ChatMessage, ChatRequest, OpenAIStreamChunk};
 use crate::model::WhatsAppContact;
 use crate::state::AppState;
 use crate::storage::{get_app_dir, save_config, RecentChat};
 use base64::{engine::general_purpose, Engine as _};
-use futures_util::StreamExt;
 use qrcode_generator::QrCodeEcc;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -51,204 +49,22 @@ async fn generate_reply(
     user_message: String,
     contact_name: Option<&str>,
 ) -> String {
-    let (selected_model, user_memory) = {
-        let config = state.config.lock().await;
-        (config.selected_model.clone(), config.user_memory.clone())
-    };
-
-    if selected_model.is_empty() {
-        return "I don't have a model selected to reply with.".to_string();
-    }
-
-    let mut memory_context = String::new();
-    if let Some(owner_name) = &user_memory.name {
-        memory_context.push_str(&format!(
-            "The owner of the device you are running on is {}. ",
-            owner_name
-        ));
-    }
-    if !user_memory.persona.is_empty() {
-        memory_context.push_str(&format!(
-            "Information about the owner: {}. ",
-            user_memory.persona.join("; ")
-        ));
-    }
-    if !user_memory.conversation_summary.is_empty() {
-        memory_context.push_str(&format!(
-            "Recent conversation context: {}. ",
-            user_memory.conversation_summary
-        ));
-    }
-
-    let system_prompt = crate::chat_prompt::build_chat_system_prompt(&crate::chat_prompt::ChatPromptOptions {
-        contact_name: contact_name.unwrap_or("a contact"),
-        platform: "WhatsApp",
-        memory_context: &memory_context,
-        extra_rules: &[
-            "DO NOT give unsolicited advice or jump to specific topics like job applications unless they ask.",
-            "DO NOT use generic filler phrases like 'Okay!', 'That\'s awesome!', or 'Let me know what you need!'.",
-            "DO NOT use emojis unless they add genuine warmth, and strictly limit to 1 per message.",
-        ],
-    });
-
-    let client = reqwest::Client::new();
-    let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: system_prompt,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: user_message,
-        },
-    ];
-
-    let req_body = ChatRequest {
-        model: "local".to_string(),
-        messages,
-        temperature: 0.7,
-        stream: true,
-        max_tokens: None,
-        stop: None,
-    };
-
-    let mut attempts = 0;
-    let max_attempts = 45;
-    let res;
-
-    loop {
-        let send_res = client
-            .post("http://127.0.0.1:4891/v1/chat/completions")
-            .json(&req_body)
-            .send()
-            .await;
-
-        match send_res {
-            Ok(response) => {
-                let status = response.status();
-                if status.as_u16() == 503 {
-                    attempts += 1;
-                    if attempts >= max_attempts {
-                        return "Sorry, I am still loading my brain. Please try again in a minute."
-                            .into();
-                    }
-                    let _ = app_handle.emit("app-log", serde_json::json!({
-                        "level": "info",
-                        "message": format!("[WHATSAPP] AI model is loading (attempt {}/{}), waiting...", attempts, max_attempts)
-                    }));
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    continue;
-                }
-
-                if !status.is_success() {
-                    return "Sorry, I encountered an error while thinking.".into();
-                }
-
-                res = response;
-                break;
-            }
-            Err(_e) => {
-                attempts += 1;
-                if attempts >= max_attempts {
-                    return "Sorry, I am having trouble connecting to my brain right now.".into();
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+    let name = contact_name.unwrap_or("a contact");
+    match crate::chat_prompt::request_frontend_reply(
+        app_handle,
+        state,
+        "WhatsApp",
+        name,
+        &user_message,
+        false, // WhatsApp replies are always strictly chat/non-owner mode
+    )
+    .await
+    {
+        Ok(reply) => reply,
+        Err(e) => {
+            println!("[WHATSAPP] Failed to get reply from frontend: {}", e);
+            "Sorry, I encountered an issue thinking of a response.".to_string()
         }
-    }
-
-    let mut stream = res.bytes_stream();
-    let full_response = Arc::new(Mutex::new(String::new()));
-    let mut buffer = Vec::new();
-
-    while let Some(chunk_res) = stream.next().await {
-        if let Ok(chunk) = chunk_res {
-            buffer.extend_from_slice(&chunk);
-
-            let mut unparsed = Vec::new();
-            let buffer_str = String::from_utf8_lossy(&buffer);
-
-            for line in buffer_str.lines() {
-                let line = line.trim();
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
-                    if data == "[DONE]" {
-                        break;
-                    }
-                    if let Ok(response) = serde_json::from_str::<OpenAIStreamChunk>(data) {
-                        if let Some(choice) = response.choices.first() {
-                            if let Some(content) = &choice.delta.content {
-                                let mut resp_guard = full_response.lock().await;
-                                resp_guard.push_str(content);
-                            }
-                        }
-                    }
-                } else if !line.is_empty() {
-                    unparsed.extend_from_slice(line.as_bytes());
-                    unparsed.push(b'\n');
-                }
-            }
-            buffer = unparsed;
-        }
-    }
-
-    let final_resp = full_response.lock().await.clone();
-    let _ = app_handle.emit(
-        "app-log",
-        serde_json::json!({
-            "level": "debug",
-            "message": format!("[WHATSAPP] Model raw output: {}", final_resp)
-        }),
-    );
-    let mut reply = final_resp.trim().to_string();
-
-// Clean up potential tool calls or markdown blocks that the LLM might have hallucinated
-    if reply.contains("{\"tool\":") || reply.contains("```json") {
-        let _ = app_handle.emit(
-            "app-log",
-            serde_json::json!({
-                "level": "debug",
-                "message": "[WHATSAPP] Detected tool call in output, stripping to plain text."
-            }),
-        );
-
-        // Simple regex-less stripping: find the first { and last } if it looks like JSON
-        // or just look for the text before the JSON
-        if let Some(idx) = reply.find("{\"tool\":") {
-            let before = reply[..idx].trim().to_string();
-            // Only strip if there is actually text before the JSON
-            if !before.is_empty() {
-                reply = before;
-            }
-            // If the entire message is just the JSON tool call with no context,
-            // keep it as-is rather than returning empty
-        }
-
-        // Also strip markdown blocks
-        if let Some(idx) = reply.find("```") {
-            let before = reply[..idx].trim().to_string();
-            reply = before;
-        }
-    }
-
-    if reply.is_empty() {
-        let _ = app_handle.emit(
-            "app-log",
-            serde_json::json!({
-                "level": "warn",
-                "message": "[WHATSAPP] Model returned an empty response."
-            }),
-        );
-        "I heard you, but I'm not sure what to say.".into()
-    } else {
-        let _ = app_handle.emit(
-            "app-log",
-            serde_json::json!({
-                "level": "info",
-                "message": format!("[WHATSAPP] Reply generated ({} chars).", reply.len())
-            }),
-        );
-        reply
     }
 }
 

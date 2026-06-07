@@ -282,7 +282,8 @@ export const TOOL_CATEGORIES = {
   discord: ["set_discord_status", "discord_get_channels", "discord_send_channel_message", "discord_kick", "discord_ban", "discord_unban", "discord_mute", "discord_unmute", "discord_warn", "discord_delete_messages", "discord_assign_role", "discord_remove_role", "discord_send_dm", "discord_get_guilds", "set_discord_behaviour_channel", "get_user_behaviour"],
   email: ["send_email", "save_email_config"],
   agents: ["send_to_cli_agent", "get_cli_agents_status"],
-  todos: ["add_todo"]
+  todos: ["add_todo"],
+  banter: []
 } as const;
 
 function getCategoryForTool(toolName: string): string | null {
@@ -351,6 +352,12 @@ export function detectRequiredToolCategories(
   const isTodos = /\b(to[- ]do|todos?|remind(er)?s?)\b/i.test(normalized);
   if (isTodos) {
     categories.add("todos");
+  }
+
+  // 5.6 Banter Matcher
+  const isBanter = /\b(pickup\s*line|pick\s*up\s*line|joke|jokes|flirt|flirty|friendly|romantic|compliment|pickup|tease|teasing|playful|humor|humorous|fun)\b/i.test(normalized);
+  if (isBanter) {
+    categories.add("banter");
   }
 
   // 6. Contextual confirmations/pronouns check
@@ -502,6 +509,10 @@ export function buildConversationHistory(
     dynamicContext = memoryContext;
   } else {
     // Chat mode: zero mention of JSON or tools — keeps small models from hallucinating JSON
+    const banterRule = categories.includes("banter")
+      ? "\n5. BANTER & FUN: When responding to a conversational request for a joke, pickup line, or friendly/flirtatious banter, be highly cooperative, warm, and humorous. Provide a fun and lighthearted response instead of declining or being overly formal. Let's make sure the pickup lines/jokes are playful and engaging!"
+      : "";
+
     systemPrompt = `You are Pern, a friendly and intelligent personal assistant acting on behalf of the device owner. You are responding AS the assistant, not as the user.
 Never speak from the user's perspective or say things like "I would love some ideas" as if you are the user — you are the one providing ideas, information, and help.
 
@@ -509,7 +520,7 @@ STRICT RULES:
 1. Always address the user by their name when appropriate to keep the conversation personal.
 2. Keep responses concise, natural, and warm. Use plain text only.
 3. DO NOT attempt to use any tools or output JSON. Your output must only be plain natural text.
-4. PRIVACY & KNOWLEDGE: Never discuss other contacts, leak private chats, or make up information.
+4. PRIVACY & KNOWLEDGE: Never discuss other contacts, leak private chats, or make up information.${banterRule}
 
 CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them a question, follow through immediately. For example:
 - If you asked "Would you like me to suggest some ideas?" and they say "Yes" — GIVE them the ideas right away.

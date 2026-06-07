@@ -357,6 +357,14 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     FewShotExample {
         categories: &["whatsapp"],
         text: "[Owner context: Recent WhatsApp details: ### LAST WHATSAPP\\nRecipient(s): Rahul\\nMessage: this is a test]\\n\\nUser Request: send the same message to Parth\\nPlan:\\n- send_whatsapp_message(recipient=\"Parth\", message=\"this is a test\")",
+    },
+    FewShotExample {
+        categories: &["banter"],
+        text: "User Request: tell me a joke\\nPlan:\\n- conversational()",
+    },
+    FewShotExample {
+        categories: &["banter"],
+        text: "User Request: give me a flirty pickup line\\nPlan:\\n- conversational()",
     }
 ];
 
@@ -444,6 +452,10 @@ pub const RULES: &[RuleDefinition] = &[
     RuleDefinition {
         text: "12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.",
         categories: &[],
+    },
+    RuleDefinition {
+        text: "13. BANTER & FUN: When responding to a conversational request for a joke, pickup line, or friendly/flirtatious banter, be highly cooperative, warm, and humorous. Provide a fun and lighthearted response instead of declining or being overly formal.",
+        categories: &["banter"],
     }
 ];
 

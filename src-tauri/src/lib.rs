@@ -26,6 +26,21 @@ use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
 #[tauri::command]
+async fn submit_external_reply(
+    request_id: String,
+    reply: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    let mut map = state.pending_external_replies.lock().await;
+    if let Some(tx) = map.remove(&request_id) {
+        let _ = tx.send(reply);
+        Ok(())
+    } else {
+        Err("Request ID not found or already timed out".to_string())
+    }
+}
+
+#[tauri::command]
 async fn send_chat_message(
     model_id: String,
     messages: Vec<ChatMessage>,
@@ -385,7 +400,8 @@ pub fn run() {
             commands::system::get_autostart,
             commands::todos::get_todos,
             commands::todos::save_todos,
-            send_chat_message
+            send_chat_message,
+            submit_external_reply
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

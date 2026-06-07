@@ -3,6 +3,8 @@ import { api, AppConfig, ChatMessage, UserMemory } from "../lib/api";
 import { Send, Mic, MicOff } from "lucide-react";
 import { useSpeech } from "../lib/speech";
 import { showNotification } from "../lib/notifications";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import logo from "../assets/logo.png";
 interface Props {
@@ -80,6 +82,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     conversation_summary: "",
   });
   const configRef = useRef(config);
+  const onConfigUpdateRef = useRef(onConfigUpdate);
   const lastExecutedToolCallRef = useRef<string | null>(null);
   const emptyResponseRetryCountRef = useRef(0);
   const awaitingModelResponseRef = useRef(false);
@@ -256,6 +259,10 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+
+  useEffect(() => {
+    onConfigUpdateRef.current = onConfigUpdate;
+  }, [onConfigUpdate]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -456,6 +463,462 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     };
   }, []);
 
+  const executeSingleTool = async (
+    tc: ToolCall,
+    context: {
+      successfulWhatsAppRecipients: string[];
+      successfulWhatsAppMessageRef: { current: string };
+      needsConfigRefreshRef: { current: boolean };
+    }
+  ): Promise<ToolResult> => {
+    let result: ToolResult;
+    if (tc.tool === "close_app") {
+      const appName = getStringArg(tc.args, "app_name");
+      result = appName
+        ? await api.closeApp(appName)
+        : { ok: false, error: "The app name was missing." };
+    } else if (tc.tool === "launch_app") {
+      const appName = getStringArg(tc.args, "app_name");
+      result = appName
+        ? await api.launchApp(appName)
+        : { ok: false, error: "The app name was missing." };
+    } else if (tc.tool === "add_todo") {
+      const text = getStringArg(tc.args, "text");
+      const time = getStringArg(tc.args, "time") || "";
+      const repeatHours = getNumberArg(tc.args, "repeat_hours") || 0;
+
+      if (!text) {
+        result = { ok: false, error: "Task text is required." };
+      } else {
+        const stored = localStorage.getItem("pern_todos");
+        const todos = stored ? JSON.parse(stored) : [];
+
+        let resolvedTime = time;
+        if (repeatHours > 0 && !resolvedTime) {
+          const futureDate = new Date();
+          futureDate.setHours(futureDate.getHours() + repeatHours);
+          resolvedTime = futureDate.toISOString();
+        }
+
+        const newTodo = {
+          id: Math.random().toString(36).substring(2, 9),
+          text: text.trim(),
+          time: resolvedTime ? new Date(resolvedTime).toISOString() : "",
+          completed: false,
+          reminded: false,
+          repeat_hours: repeatHours,
+        };
+
+        todos.unshift(newTodo);
+        localStorage.setItem("pern_todos", JSON.stringify(todos));
+        try {
+          await api.saveTodos(todos);
+        } catch (err) {
+          console.error("Failed to save todos to disk:", err);
+        }
+        window.dispatchEvent(new Event("pern_todos_updated"));
+
+        result = {
+          ok: true,
+          message: `Added todo: "${text}"${resolvedTime ? ` scheduled for ${new Date(resolvedTime).toLocaleString()}` : ""}${repeatHours > 0 ? ` (repeats every ${repeatHours} hours)` : ""}.`
+        };
+      }
+    } else if (tc.tool === "restart_system") {
+      result = await api.restartSystem();
+    } else if (tc.tool === "shutdown_system") {
+      result = await api.shutdownSystem();
+    } else if (tc.tool === "send_email") {
+      const validationError = validateEmailToolArgs(tc.args);
+      if (validationError) {
+        result = { ok: false, error: validationError };
+      } else {
+        const body = getExactStringArg(tc.args, "body");
+        result = await api.sendEmail(
+          getStringArg(tc.args, "to"),
+          getStringArg(tc.args, "subject"),
+          body,
+        );
+      }
+    } else if (tc.tool === "set_discord_status") {
+      const status = getStringArg(tc.args, "status") || undefined;
+      const activity = getStringArg(tc.args, "activity") || undefined;
+      if (!status && !activity) {
+        result = { ok: false, error: "Status or activity missing." };
+      } else {
+        const message = await api.setDiscordStatus(status, activity);
+        result = { ok: true, message };
+      }
+    } else if (tc.tool === "add_whatsapp_contact") {
+      const name = getStringArg(tc.args, "name");
+      const number = getStringArg(tc.args, "number");
+      if (!name || !number) {
+        result = { ok: false, error: "Name or number missing." };
+      } else {
+        await api.addWhatsAppContact(name, number);
+        result = { ok: true };
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "set_whatsapp_contact_auto_reply") {
+      const name = getStringArg(tc.args, "name");
+      const enabled = getBooleanArg(tc.args, "enabled");
+      if (!name || enabled === undefined) {
+        result = { ok: false, error: "Name or enabled status missing." };
+      } else {
+        await api.setWhatsAppContactAutoReply(name, enabled);
+        result = { ok: true };
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "set_whatsapp_auto_reply") {
+      const recipient =
+        getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
+      const enabled = getBooleanArg(tc.args, "enabled");
+      if (!recipient || enabled === undefined) {
+        result = {
+          ok: false,
+          error: "Recipient or enabled status missing.",
+        };
+      } else {
+        const actualName = await api.setWhatsAppAutoReply(
+          recipient,
+          enabled,
+        );
+        result = {
+          ok: true,
+          status: `Auto-reply ${enabled ? "enabled" : "disabled"} for contact ${actualName} on WhatsApp.`,
+        };
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "toggle_whatsapp_auto_reply") {
+      const recipient =
+        getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
+      if (!recipient) {
+        result = { ok: false, error: "Recipient missing." };
+      } else {
+        try {
+          const [actualName, newState] =
+            await api.toggleWhatsAppAutoReply(recipient);
+          result = {
+            ok: true,
+            status: `Toggled auto-reply on WhatsApp. It is now ${newState ? "enabled" : "disabled"} for contact ${actualName}.`,
+          };
+        } catch (e) {
+          try {
+            const refreshed = await api.getWhatsAppContacts();
+            const recipientLower = recipient.toLowerCase();
+            const recipientKey = recipientLower.replace(/[^a-z0-9]/g, "");
+            const matches = refreshed.find((c) => {
+              const nameLower = c.name.toLowerCase();
+              const nameKey = nameLower.replace(/[^a-z0-9]/g, "");
+              return (
+                nameLower === recipientLower ||
+                nameLower.includes(recipientLower) ||
+                recipientLower.includes(nameLower) ||
+                (nameKey &&
+                  recipientKey &&
+                  (nameKey === recipientKey ||
+                    nameKey.includes(recipientKey) ||
+                    recipientKey.includes(nameKey)))
+              );
+            });
+
+            if (matches) {
+              result = {
+                ok: true,
+                status: `Auto-reply is now ${matches.auto_reply_enabled ? "enabled" : "disabled"} for contact ${matches.name} on WhatsApp.`,
+              };
+            } else {
+              result = {
+                ok: true,
+                status: `Auto-reply toggle sent for contact ${recipient} on WhatsApp. (Couldn't verify state in chat.)`,
+              };
+            }
+          } catch (_refreshError) {
+            result = {
+              ok: true,
+              status: `Auto-reply toggle sent for contact ${recipient} on WhatsApp. (Couldn't verify state in chat.)`,
+            };
+          }
+        }
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "toggle_whatsapp") {
+      const enabled = getBooleanArg(tc.args, "enabled");
+      if (enabled === undefined) {
+        result = { ok: false, error: "Enabled status missing." };
+      } else {
+        await api.toggleWhatsApp(enabled);
+        result = { ok: true };
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "send_whatsapp_message") {
+      const recipient = getStringArg(tc.args, "recipient");
+      const message = getStringArg(tc.args, "message");
+      if (!recipient || !message) {
+        result = { ok: false, error: "Recipient or message missing." };
+      } else {
+        await api.sendWhatsAppMessage(recipient, message);
+        result = { ok: true };
+        context.successfulWhatsAppRecipients.push(recipient);
+        context.successfulWhatsAppMessageRef.current = message;
+      }
+    } else if (tc.tool === "save_email_config") {
+      const smtpHost = getStringArg(tc.args, "smtp_host");
+      const smtpPort = getNumberArg(tc.args, "smtp_port");
+      const senderEmail = getStringArg(tc.args, "sender_email");
+      const smtpPassword = getStringArg(tc.args, "smtp_password");
+
+      if (!smtpHost || smtpPort === null || !senderEmail || !smtpPassword) {
+        result = {
+          ok: false,
+          error: "The email settings were incomplete.",
+        };
+      } else {
+        await api.saveEmailConfig(
+          smtpHost,
+          smtpPort,
+          senderEmail,
+          smtpPassword,
+        );
+        result = { ok: true };
+        context.needsConfigRefreshRef.current = true;
+      }
+    } else if (tc.tool === "discord_kick") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      const reason = getStringArg(tc.args, "reason") || undefined;
+      if (!guildId || !userId) {
+        result = { ok: false, error: "Guild ID or User ID missing." };
+      } else {
+        await api.discordKick(guildId, userId, reason);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_ban") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      const reason = getStringArg(tc.args, "reason") || undefined;
+      const deleteSecs =
+        getNumberArg(tc.args, "delete_message_seconds") || undefined;
+      if (!guildId || !userId) {
+        result = { ok: false, error: "Guild ID or User ID missing." };
+      } else {
+        await api.discordBan(guildId, userId, reason, deleteSecs);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_unban") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      if (!guildId || !userId) {
+        result = { ok: false, error: "Guild ID or User ID missing." };
+      } else {
+        await api.discordUnban(guildId, userId);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_mute") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      const duration = getNumberArg(tc.args, "duration_mins");
+      const reason = getStringArg(tc.args, "reason") || undefined;
+      if (!guildId || !userId || duration === null) {
+        result = {
+          ok: false,
+          error: "Guild ID, User ID, or duration missing.",
+        };
+      } else {
+        await api.discordMute(guildId, userId, duration, reason);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_unmute") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      if (!guildId || !userId) {
+        result = { ok: false, error: "Guild ID or User ID missing." };
+      } else {
+        await api.discordUnmute(guildId, userId);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_warn") {
+      const guildId = getStringArg(tc.args, "guild_id") || null;
+      const userId = getStringArg(tc.args, "user_id");
+      const reason = getStringArg(tc.args, "reason");
+      if (!userId || !reason) {
+        result = { ok: false, error: "User ID or warning reason missing." };
+      } else {
+        await api.discordWarn(guildId, userId, reason);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_delete_messages") {
+      const channelId = getStringArg(tc.args, "channel_id");
+      const count = getNumberArg(tc.args, "count");
+      if (!channelId || count === null) {
+        result = {
+          ok: false,
+          error: "Channel ID or message count missing.",
+        };
+      } else {
+        await api.discordDeleteMessages(channelId, count);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_assign_role") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      const roleId = getStringArg(tc.args, "role_id");
+      if (!guildId || !userId || !roleId) {
+        result = {
+          ok: false,
+          error: "Guild ID, User ID, or Role ID missing.",
+        };
+      } else {
+        await api.discordAssignRole(guildId, userId, roleId);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_remove_role") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const userId = getStringArg(tc.args, "user_id");
+      const roleId = getStringArg(tc.args, "role_id");
+      if (!guildId || !userId || !roleId) {
+        result = {
+          ok: false,
+          error: "Guild ID, User ID, or Role ID missing.",
+        };
+      } else {
+        await api.discordRemoveRole(guildId, userId, roleId);
+        result = { ok: true };
+      }
+    } else if (tc.tool === "discord_get_guilds") {
+      const guilds = await api.discordGetGuilds();
+      result = { ok: true, guilds };
+    } else if (tc.tool === "discord_send_dm") {
+      const userId = getStringArg(tc.args, "user_id");
+      const message = getStringArg(tc.args, "message");
+      if (!userId || !message) {
+        result = { ok: false, error: "User ID or message missing." };
+      } else {
+        const status = await api.discordSendDm(userId, message);
+        result = { ok: true, message: status };
+      }
+    } else if (tc.tool === "discord_send_channel_message") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      const channelName = getStringArg(tc.args, "channel_name");
+      const message = getStringArg(tc.args, "message");
+      if (!guildId || !channelName || !message) {
+        result = {
+          ok: false,
+          error: "Guild ID, channel name, or message missing.",
+        };
+      } else {
+        const status = await api.discordSendChannelMessage(
+          guildId,
+          channelName,
+          message,
+        );
+        result = { ok: true, message: status };
+      }
+    } else if (tc.tool === "discord_get_channels") {
+      const guildId = getStringArg(tc.args, "guild_id");
+      if (!guildId) {
+        result = { ok: false, error: "Guild ID missing." };
+      } else {
+        const channelsVal = await api.discordGetChannels(guildId);
+        if (Array.isArray(channelsVal)) {
+          let list = "Here are the channels in this server:\n";
+          for (const c of channelsVal) {
+            if (c.name) {
+              const typeStr =
+                c.type === 0
+                  ? "text"
+                  : c.type === 2
+                    ? "voice"
+                    : c.type === 4
+                      ? "category"
+                      : c.type === 5
+                        ? "announcement"
+                        : "other";
+              list += `- **#${c.name}** (ID: \`${c.id}\`, Type: ${typeStr})\n`;
+            }
+          }
+          result = { ok: true, message: list };
+        } else {
+          result = {
+            ok: true,
+            message: "Could not retrieve channel list.",
+          };
+        }
+      }
+    } else if (tc.tool === "set_discord_behaviour_channel") {
+      const channelId = getStringArg(tc.args, "channel_id");
+      if (!channelId) {
+        result = { ok: false, error: "Channel ID missing." };
+      } else {
+        const status = await api.setDiscordBehaviourChannel(channelId);
+        result = { ok: true, message: status };
+      }
+    } else if (tc.tool === "get_user_behaviour") {
+      const userId = getStringArg(tc.args, "user_id");
+      if (!userId) {
+        result = { ok: false, error: "User ID missing." };
+      } else {
+        const analysis = await api.getUserBehaviour(userId);
+        result = { ok: true, message: analysis };
+      }
+    } else if (tc.tool === "get_status") {
+      const status = await api.getSystemStatus();
+      result = { ok: true, message: status };
+    } else if (tc.tool === "send_to_cli_agent") {
+      const agentName = getStringArg(tc.args, "agent_name");
+      const prompt = getStringArg(tc.args, "prompt");
+      const projectName =
+        getStringArg(tc.args, "project_name") || undefined;
+      if (!agentName || !prompt) {
+        result = { ok: false, error: "Agent name or prompt missing." };
+      } else {
+        try {
+          const projectSuffix = projectName
+            ? ` in project "${projectName}"`
+            : "";
+          await api.sendToCLIAgent(agentName, prompt, projectName);
+          result = {
+            ok: true,
+            message: `Task sent to ${agentName}${projectSuffix}. I'll notify you when it completes.`,
+          };
+        } catch (e) {
+          result = { ok: false, error: getErrorMessage(e) };
+        }
+      }
+    } else if (tc.tool === "get_cli_agents_status") {
+      try {
+        const agents = await api.getCLIAgentsStatus();
+        const lines = agents.map((a) => {
+          const statusIcon =
+            a.status === "running"
+              ? "🔄"
+              : a.status === "completed"
+                ? "✅"
+                : a.status === "failed"
+                  ? "❌"
+                  : a.status === "not_found"
+                    ? "⚠️"
+                    : "💤";
+          const taskStr = a.current_task
+            ? ` (working on: ${a.current_task.slice(0, 60)})`
+            : "";
+          return `${statusIcon} **${a.display_name}**: ${a.status}${taskStr}`;
+        });
+        result = {
+          ok: true,
+          message: `**CLI Agent Status:**\n${lines.join("\n")}`,
+        };
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    } else {
+      result = {
+        ok: false,
+        error: `Tool "${tc.tool}" is not implemented.`,
+      };
+    }
+    return result;
+  };
+
   const handleToolBatch = async (toolCalls: ToolCall[]) => {
     console.log("[CHAT][DIAG] handleToolBatch START", {
       toolCount: toolCalls.length,
@@ -474,461 +937,17 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
 
     setIsGenerating(true);
     const followUpMessages: ChatMessage[] = [];
-    let needsConfigRefresh = false;
-    const successfulWhatsAppRecipients: string[] = [];
-    let successfulWhatsAppMessage = "";
+    const context = {
+      successfulWhatsAppRecipients: [] as string[],
+      successfulWhatsAppMessageRef: { current: "" },
+      needsConfigRefreshRef: { current: false },
+    };
 
     for (const tc of toolCalls) {
       setCurrentTask(getCurrentTaskLabel(tc));
 
       try {
-        let result: ToolResult;
-
-        if (tc.tool === "close_app") {
-          const appName = getStringArg(tc.args, "app_name");
-          result = appName
-            ? await api.closeApp(appName)
-            : { ok: false, error: "The app name was missing." };
-        } else if (tc.tool === "launch_app") {
-          const appName = getStringArg(tc.args, "app_name");
-          result = appName
-            ? await api.launchApp(appName)
-            : { ok: false, error: "The app name was missing." };
-        } else if (tc.tool === "add_todo") {
-          const text = getStringArg(tc.args, "text");
-          const time = getStringArg(tc.args, "time") || "";
-          const repeatHours = getNumberArg(tc.args, "repeat_hours") || 0;
-
-          if (!text) {
-            result = { ok: false, error: "Task text is required." };
-          } else {
-            const stored = localStorage.getItem("pern_todos");
-            const todos = stored ? JSON.parse(stored) : [];
-
-            let resolvedTime = time;
-            if (repeatHours > 0 && !resolvedTime) {
-              const futureDate = new Date();
-              futureDate.setHours(futureDate.getHours() + repeatHours);
-              resolvedTime = futureDate.toISOString();
-            }
-
-            const newTodo = {
-              id: Math.random().toString(36).substring(2, 9),
-              text: text.trim(),
-              time: resolvedTime ? new Date(resolvedTime).toISOString() : "",
-              completed: false,
-              reminded: false,
-              repeat_hours: repeatHours,
-            };
-
-            todos.unshift(newTodo);
-            localStorage.setItem("pern_todos", JSON.stringify(todos));
-            try {
-              await api.saveTodos(todos);
-            } catch (err) {
-              console.error("Failed to save todos to disk:", err);
-            }
-            window.dispatchEvent(new Event("pern_todos_updated"));
-
-            result = {
-              ok: true,
-              message: `Added todo: "${text}"${resolvedTime ? ` scheduled for ${new Date(resolvedTime).toLocaleString()}` : ""}${repeatHours > 0 ? ` (repeats every ${repeatHours} hours)` : ""}.`
-            };
-          }
-        } else if (tc.tool === "restart_system") {
-          result = await api.restartSystem();
-        } else if (tc.tool === "shutdown_system") {
-          result = await api.shutdownSystem();
-        } else if (tc.tool === "send_email") {
-          const validationError = validateEmailToolArgs(tc.args);
-          if (validationError) {
-            result = { ok: false, error: validationError };
-          } else {
-            const body = getExactStringArg(tc.args, "body");
-            result = await api.sendEmail(
-              getStringArg(tc.args, "to"),
-              getStringArg(tc.args, "subject"),
-              body,
-            );
-          }
-        } else if (tc.tool === "set_discord_status") {
-          const status = getStringArg(tc.args, "status") || undefined;
-          const activity = getStringArg(tc.args, "activity") || undefined;
-          if (!status && !activity) {
-            result = { ok: false, error: "Status or activity missing." };
-          } else {
-            const message = await api.setDiscordStatus(status, activity);
-            result = { ok: true, message };
-          }
-        } else if (tc.tool === "add_whatsapp_contact") {
-          const name = getStringArg(tc.args, "name");
-          const number = getStringArg(tc.args, "number");
-          if (!name || !number) {
-            result = { ok: false, error: "Name or number missing." };
-          } else {
-            await api.addWhatsAppContact(name, number);
-            result = { ok: true };
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "set_whatsapp_contact_auto_reply") {
-          const name = getStringArg(tc.args, "name");
-          const enabled = getBooleanArg(tc.args, "enabled");
-          if (!name || enabled === undefined) {
-            result = { ok: false, error: "Name or enabled status missing." };
-          } else {
-            await api.setWhatsAppContactAutoReply(name, enabled);
-            result = { ok: true };
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "set_whatsapp_auto_reply") {
-          const recipient =
-            getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
-          const enabled = getBooleanArg(tc.args, "enabled");
-          if (!recipient || enabled === undefined) {
-            result = {
-              ok: false,
-              error: "Recipient or enabled status missing.",
-            };
-          } else {
-            const actualName = await api.setWhatsAppAutoReply(
-              recipient,
-              enabled,
-            );
-            result = {
-              ok: true,
-              status: `Auto-reply ${enabled ? "enabled" : "disabled"} for contact ${actualName} on WhatsApp.`,
-            };
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "toggle_whatsapp_auto_reply") {
-          const recipient =
-            getStringArg(tc.args, "recipient") || getStringArg(tc.args, "name");
-          if (!recipient) {
-            result = { ok: false, error: "Recipient missing." };
-          } else {
-            try {
-              const [actualName, newState] =
-                await api.toggleWhatsAppAutoReply(recipient);
-              result = {
-                ok: true,
-                status: `Toggled auto-reply on WhatsApp. It is now ${newState ? "enabled" : "disabled"} for contact ${actualName}.`,
-              };
-            } catch (e) {
-              try {
-                const refreshed = await api.getWhatsAppContacts();
-                const recipientLower = recipient.toLowerCase();
-                const recipientKey = recipientLower.replace(/[^a-z0-9]/g, "");
-                const matches = refreshed.find((c) => {
-                  const nameLower = c.name.toLowerCase();
-                  const nameKey = nameLower.replace(/[^a-z0-9]/g, "");
-                  return (
-                    nameLower === recipientLower ||
-                    nameLower.includes(recipientLower) ||
-                    recipientLower.includes(nameLower) ||
-                    (nameKey &&
-                      recipientKey &&
-                      (nameKey === recipientKey ||
-                        nameKey.includes(recipientKey) ||
-                        recipientKey.includes(nameKey)))
-                  );
-                });
-
-                if (matches) {
-                  result = {
-                    ok: true,
-                    status: `Auto-reply is now ${matches.auto_reply_enabled ? "enabled" : "disabled"} for contact ${matches.name} on WhatsApp.`,
-                  };
-                } else {
-                  result = {
-                    ok: true,
-                    status: `Auto-reply toggle sent for contact ${recipient} on WhatsApp. (Couldn't verify state in chat.)`,
-                  };
-                }
-              } catch (_refreshError) {
-                result = {
-                  ok: true,
-                  status: `Auto-reply toggle sent for contact ${recipient} on WhatsApp. (Couldn't verify state in chat.)`,
-                };
-              }
-            }
-
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "toggle_whatsapp") {
-          const enabled = getBooleanArg(tc.args, "enabled");
-          if (enabled === undefined) {
-            result = { ok: false, error: "Enabled status missing." };
-          } else {
-            await api.toggleWhatsApp(enabled);
-            result = { ok: true };
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "send_whatsapp_message") {
-          const recipient = getStringArg(tc.args, "recipient");
-          const message = getStringArg(tc.args, "message");
-          if (!recipient || !message) {
-            result = { ok: false, error: "Recipient or message missing." };
-          } else {
-            await api.sendWhatsAppMessage(recipient, message);
-            result = { ok: true };
-            successfulWhatsAppRecipients.push(recipient);
-            successfulWhatsAppMessage = message;
-          }
-        } else if (tc.tool === "save_email_config") {
-          const smtpHost = getStringArg(tc.args, "smtp_host");
-          const smtpPort = getNumberArg(tc.args, "smtp_port");
-          const senderEmail = getStringArg(tc.args, "sender_email");
-          const smtpPassword = getStringArg(tc.args, "smtp_password");
-
-          if (!smtpHost || smtpPort === null || !senderEmail || !smtpPassword) {
-            result = {
-              ok: false,
-              error: "The email settings were incomplete.",
-            };
-          } else {
-            await api.saveEmailConfig(
-              smtpHost,
-              smtpPort,
-              senderEmail,
-              smtpPassword,
-            );
-            result = { ok: true };
-            needsConfigRefresh = true;
-          }
-        } else if (tc.tool === "discord_kick") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          const reason = getStringArg(tc.args, "reason") || undefined;
-          if (!guildId || !userId) {
-            result = { ok: false, error: "Guild ID or User ID missing." };
-          } else {
-            await api.discordKick(guildId, userId, reason);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_ban") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          const reason = getStringArg(tc.args, "reason") || undefined;
-          const deleteSecs =
-            getNumberArg(tc.args, "delete_message_seconds") || undefined;
-          if (!guildId || !userId) {
-            result = { ok: false, error: "Guild ID or User ID missing." };
-          } else {
-            await api.discordBan(guildId, userId, reason, deleteSecs);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_unban") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          if (!guildId || !userId) {
-            result = { ok: false, error: "Guild ID or User ID missing." };
-          } else {
-            await api.discordUnban(guildId, userId);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_mute") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          const duration = getNumberArg(tc.args, "duration_mins");
-          const reason = getStringArg(tc.args, "reason") || undefined;
-          if (!guildId || !userId || duration === null) {
-            result = {
-              ok: false,
-              error: "Guild ID, User ID, or duration missing.",
-            };
-          } else {
-            await api.discordMute(guildId, userId, duration, reason);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_unmute") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          if (!guildId || !userId) {
-            result = { ok: false, error: "Guild ID or User ID missing." };
-          } else {
-            await api.discordUnmute(guildId, userId);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_warn") {
-          const guildId = getStringArg(tc.args, "guild_id") || null;
-          const userId = getStringArg(tc.args, "user_id");
-          const reason = getStringArg(tc.args, "reason");
-          if (!userId || !reason) {
-            result = { ok: false, error: "User ID or warning reason missing." };
-          } else {
-            await api.discordWarn(guildId, userId, reason);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_delete_messages") {
-          const channelId = getStringArg(tc.args, "channel_id");
-          const count = getNumberArg(tc.args, "count");
-          if (!channelId || count === null) {
-            result = {
-              ok: false,
-              error: "Channel ID or message count missing.",
-            };
-          } else {
-            await api.discordDeleteMessages(channelId, count);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_assign_role") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          const roleId = getStringArg(tc.args, "role_id");
-          if (!guildId || !userId || !roleId) {
-            result = {
-              ok: false,
-              error: "Guild ID, User ID, or Role ID missing.",
-            };
-          } else {
-            await api.discordAssignRole(guildId, userId, roleId);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_remove_role") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const userId = getStringArg(tc.args, "user_id");
-          const roleId = getStringArg(tc.args, "role_id");
-          if (!guildId || !userId || !roleId) {
-            result = {
-              ok: false,
-              error: "Guild ID, User ID, or Role ID missing.",
-            };
-          } else {
-            await api.discordRemoveRole(guildId, userId, roleId);
-            result = { ok: true };
-          }
-        } else if (tc.tool === "discord_get_guilds") {
-          const guilds = await api.discordGetGuilds();
-          result = { ok: true, guilds };
-        } else if (tc.tool === "discord_send_dm") {
-          const userId = getStringArg(tc.args, "user_id");
-          const message = getStringArg(tc.args, "message");
-          if (!userId || !message) {
-            result = { ok: false, error: "User ID or message missing." };
-          } else {
-            const status = await api.discordSendDm(userId, message);
-            result = { ok: true, message: status };
-          }
-        } else if (tc.tool === "discord_send_channel_message") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          const channelName = getStringArg(tc.args, "channel_name");
-          const message = getStringArg(tc.args, "message");
-          if (!guildId || !channelName || !message) {
-            result = {
-              ok: false,
-              error: "Guild ID, channel name, or message missing.",
-            };
-          } else {
-            const status = await api.discordSendChannelMessage(
-              guildId,
-              channelName,
-              message,
-            );
-            result = { ok: true, message: status };
-          }
-        } else if (tc.tool === "discord_get_channels") {
-          const guildId = getStringArg(tc.args, "guild_id");
-          if (!guildId) {
-            result = { ok: false, error: "Guild ID missing." };
-          } else {
-            const channelsVal = await api.discordGetChannels(guildId);
-            if (Array.isArray(channelsVal)) {
-              let list = "Here are the channels in this server:\n";
-              for (const c of channelsVal) {
-                if (c.name) {
-                  const typeStr =
-                    c.type === 0
-                      ? "text"
-                      : c.type === 2
-                        ? "voice"
-                        : c.type === 4
-                          ? "category"
-                          : c.type === 5
-                            ? "announcement"
-                            : "other";
-                  list += `- **#${c.name}** (ID: \`${c.id}\`, Type: ${typeStr})\n`;
-                }
-              }
-              result = { ok: true, message: list };
-            } else {
-              result = {
-                ok: true,
-                message: "Could not retrieve channel list.",
-              };
-            }
-          }
-        } else if (tc.tool === "set_discord_behaviour_channel") {
-          const channelId = getStringArg(tc.args, "channel_id");
-          if (!channelId) {
-            result = { ok: false, error: "Channel ID missing." };
-          } else {
-            const status = await api.setDiscordBehaviourChannel(channelId);
-            result = { ok: true, message: status };
-          }
-        } else if (tc.tool === "get_user_behaviour") {
-          const userId = getStringArg(tc.args, "user_id");
-          if (!userId) {
-            result = { ok: false, error: "User ID missing." };
-          } else {
-            const analysis = await api.getUserBehaviour(userId);
-            result = { ok: true, message: analysis };
-          }
-        } else if (tc.tool === "get_status") {
-          const status = await api.getSystemStatus();
-          result = { ok: true, message: status };
-        } else if (tc.tool === "send_to_cli_agent") {
-          const agentName = getStringArg(tc.args, "agent_name");
-          const prompt = getStringArg(tc.args, "prompt");
-          const projectName =
-            getStringArg(tc.args, "project_name") || undefined;
-          if (!agentName || !prompt) {
-            result = { ok: false, error: "Agent name or prompt missing." };
-          } else {
-            try {
-              const projectSuffix = projectName
-                ? ` in project "${projectName}"`
-                : "";
-              await api.sendToCLIAgent(agentName, prompt, projectName);
-              result = {
-                ok: true,
-                message: `Task sent to ${agentName}${projectSuffix}. I'll notify you when it completes.`,
-              };
-            } catch (e) {
-              result = { ok: false, error: getErrorMessage(e) };
-            }
-          }
-        } else if (tc.tool === "get_cli_agents_status") {
-          try {
-            const agents = await api.getCLIAgentsStatus();
-            const lines = agents.map((a) => {
-              const statusIcon =
-                a.status === "running"
-                  ? "🔄"
-                  : a.status === "completed"
-                    ? "✅"
-                    : a.status === "failed"
-                      ? "❌"
-                      : a.status === "not_found"
-                        ? "⚠️"
-                        : "💤";
-              const taskStr = a.current_task
-                ? ` (working on: ${a.current_task.slice(0, 60)})`
-                : "";
-              return `${statusIcon} **${a.display_name}**: ${a.status}${taskStr}`;
-            });
-            result = {
-              ok: true,
-              message: `**CLI Agent Status:**\n${lines.join("\n")}`,
-            };
-          } catch (e) {
-            result = { ok: false, error: getErrorMessage(e) };
-          }
-        } else {
-          result = {
-            ok: false,
-            error: `Tool "${tc.tool}" is not implemented.`,
-          };
-        }
+        const result = await executeSingleTool(tc, context);
 
         followUpMessages.push({
           role: "assistant",
@@ -963,12 +982,12 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     }
 
     setCurrentTask(null);
-    if (successfulWhatsAppRecipients.length > 0 && successfulWhatsAppMessage) {
+    if (context.successfulWhatsAppRecipients.length > 0 && context.successfulWhatsAppMessageRef.current) {
       chatActionMemoryRef.current = {
         ...chatActionMemoryRef.current,
         whatsapp: {
-          recipients: [...new Set(successfulWhatsAppRecipients)],
-          message: successfulWhatsAppMessage,
+          recipients: [...new Set(context.successfulWhatsAppRecipients)],
+          message: context.successfulWhatsAppMessageRef.current,
         },
       };
     }
@@ -989,7 +1008,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     });
     setIsGenerating(false);
 
-    if (needsConfigRefresh && onConfigUpdate) {
+    if (context.needsConfigRefreshRef.current && onConfigUpdate) {
       try {
         await onConfigUpdate();
       } catch {
@@ -997,6 +1016,119 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       }
     }
   };
+
+  useEffect(() => {
+    let active = true;
+    let unsubExternal: (() => void) | undefined;
+
+    const setupExternalListener = async () => {
+      const u = await listen<{
+        request_id: string;
+        platform: string;
+        contact_name: string;
+        user_message: string;
+        is_owner: boolean;
+      }>("request-external-reply", async (event) => {
+        if (!active) return;
+        const { request_id, platform, contact_name, user_message, is_owner } = event.payload;
+
+        console.log(`[EXTERNAL_REQUEST] Received request ${request_id} from ${platform} (sender: ${contact_name}, is_owner: ${is_owner})`);
+
+        try {
+          const latestIntent = is_owner ? detectActionIntent(user_message) : "chat";
+
+          let relevantSkills: import("../lib/api").Skill[] = [];
+          try {
+            relevantSkills = await api.findRelevantSkills(user_message);
+          } catch (_) {}
+
+          const tempMessages: ChatMessage[] = [{ role: "user", content: user_message }];
+
+          const historyResult = buildConversationHistory(
+            tempMessages,
+            userMemoryRef.current,
+            latestIntent,
+            undefined,
+            {},
+            relevantSkills.length > 0 ? relevantSkills : undefined,
+            configRef.current.whatsapp_contacts,
+          );
+
+          const response = await fetch("http://127.0.0.1:4891/v1/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: "local",
+              messages: historyResult.messages,
+              temperature: 0.7,
+              stream: false,
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Server returned status ${response.status}`);
+          }
+
+          const data = await response.json();
+          const rawReply = data.choices?.[0]?.message?.content || "";
+          console.log("[EXTERNAL_REQUEST] Raw reply:", rawReply);
+
+          const toolCalls = latestIntent === "action" ? extractToolCalls(rawReply, user_message) : [];
+
+          let finalReply = "";
+
+          if (toolCalls.length > 0) {
+            console.log("[EXTERNAL_REQUEST] Action intent + tools found → executing tools");
+            const toolResults: string[] = [];
+            const context = {
+              successfulWhatsAppRecipients: [] as string[],
+              successfulWhatsAppMessageRef: { current: "" },
+              needsConfigRefreshRef: { current: false },
+            };
+
+            for (const tc of toolCalls) {
+              try {
+                const res = await executeSingleTool(tc, context);
+                toolResults.push(buildToolReply(tc, res));
+              } catch (err) {
+                toolResults.push(`Error executing ${tc.tool}: ${err}`);
+              }
+            }
+
+            if (context.needsConfigRefreshRef.current && onConfigUpdateRef.current) {
+              try {
+                await onConfigUpdateRef.current();
+              } catch {}
+            }
+
+            finalReply = toolResults.join("\n");
+          } else {
+            finalReply = stripToolCalls(rawReply).trim();
+          }
+
+          await invoke("submit_external_reply", { requestId: request_id, reply: finalReply });
+        } catch (err) {
+          console.error("[EXTERNAL_REQUEST] Failed to process request:", err);
+          try {
+            await invoke("submit_external_reply", {
+              requestId: request_id,
+              reply: "Sorry, I encountered an error while processing that request.",
+            });
+          } catch (invokeErr) {
+            console.error("[EXTERNAL_REQUEST] Failed to submit error reply:", invokeErr);
+          }
+        }
+      });
+      unsubExternal = u;
+    };
+
+    setupExternalListener();
+
+    return () => {
+      active = false;
+      if (unsubExternal) unsubExternal();
+    };
+  }, []);
 
   const handleSend = async (overrideInput?: string) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;

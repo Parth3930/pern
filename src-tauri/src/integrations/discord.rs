@@ -1,4 +1,4 @@
-use crate::chat::{ChatMessage, ChatRequest, OpenAIStreamChunk};
+
 use crate::state::AppState;
 use crate::storage::save_config;
 use futures_util::{SinkExt, StreamExt};
@@ -509,183 +509,89 @@ fn handle_event<'a>(
                                 config.discord_behaviour_channel_id.clone()
                             };
 
-                            if is_owner {
-                                println!("[DISCORD] Owner message/mention detected: {}", content);
-                                tauri::async_runtime::spawn(async move {
-                                    // First check if the message is a chat or an action
-                                    let is_action = detect_discord_action_intent(&user_msg);
+                             if is_owner {
+                                 println!("[DISCORD] Owner message/mention detected: {}", content);
+                                 tauri::async_runtime::spawn(async move {
+                                     let reply = generate_discord_action(
+                                         &app_handle_clone,
+                                         &state_clone,
+                                         user_msg,
+                                         &author_name,
+                                         &guild_id,
+                                     )
+                                     .await;
 
-                                    if !is_action {
-                                        // Pure chat — skip action model entirely
-                                        let chat_reply = generate_discord_reply(
-                                            &app_handle_clone,
-                                            &state_clone,
-                                            user_msg,
-                                            &author_name,
-                                        )
-                                        .await;
-                                        let body = serde_json::json!({
-                                            "content": chat_reply,
-                                            "message_reference": {
-                                                "message_id": message_id
-                                            }
-                                        });
-                                        let _ = discord_api_call(
-                                            reqwest::Method::POST,
-                                            &format!("/channels/{}/messages", channel_id),
-                                            Some(body),
-                                            &token,
-                                            None,
-                                        )
-                                        .await;
+                                     let use_embed = reply.contains("**CLI Agent Status:**")
+                                         || reply.contains("Here are the channels in this server:")
+                                         || reply.contains("System Status:")
+                                         || reply.len() > 1000;
 
-                                        // Log behaviour
-                                        let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                        send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Chat").await;
-                                        return;
-                                    }
+                                     let body = if use_embed {
+                                         serde_json::json!({
+                                             "embeds": [{
+                                                 "color": 0x5865F2,
+                                                 "description": reply,
+                                                 "footer": { "text": "Pern AI" }
+                                             }],
+                                             "message_reference": {
+                                                 "message_id": message_id
+                                             }
+                                         })
+                                     } else {
+                                         serde_json::json!({
+                                             "content": reply,
+                                             "message_reference": {
+                                                 "message_id": message_id
+                                             }
+                                         })
+                                     };
 
-                                    let action_response = generate_discord_action(
-                                        &app_handle_clone,
-                                        &state_clone,
-                                        user_msg.clone(),
-                                        &author_name,
-                                        &guild_id,
-                                    )
-                                    .await;
-                                    println!("[DISCORD] Action response: '{}'", action_response);
-                                    let tool_calls = parse_tool_calls(&action_response, &guild_id);
+                                     let _ = discord_api_call(
+                                         reqwest::Method::POST,
+                                         &format!("/channels/{}/messages", channel_id),
+                                         Some(body),
+                                         &token,
+                                         None,
+                                     )
+                                     .await;
 
-                                    if tool_calls.is_empty() {
-                                        // Fallback to chat response if no tools are output
-                                        let chat_reply = generate_discord_reply(
-                                            &app_handle_clone,
-                                            &state_clone,
-                                            user_msg,
-                                            &author_name,
-                                        )
-                                        .await;
-                                        let body = serde_json::json!({
-                                            "content": chat_reply,
-                                            "message_reference": {
-                                                "message_id": message_id
-                                            }
-                                        });
-                                        let _ = discord_api_call(
-                                            reqwest::Method::POST,
-                                            &format!("/channels/{}/messages", channel_id),
-                                            Some(body),
-                                            &token,
-                                            None,
-                                        )
-                                        .await;
+                                     // Log behaviour
+                                     let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
+                                     send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Action").await;
+                                 });
+                             } else {
+                                 println!(
+                                     "[DISCORD] Chat mention detected from non-owner {}: {}",
+                                     author_name, content
+                                 );
+                                 tauri::async_runtime::spawn(async move {
+                                     let reply = generate_discord_reply(
+                                         &app_handle_clone,
+                                         &state_clone,
+                                         user_msg,
+                                         &author_name,
+                                     )
+                                     .await;
+                                     let body = serde_json::json!({
+                                         "content": reply,
+                                         "message_reference": {
+                                             "message_id": message_id
+                                         }
+                                     });
+                                     let _ = discord_api_call(
+                                         reqwest::Method::POST,
+                                         &format!("/channels/{}/messages", channel_id),
+                                         Some(body),
+                                         &token,
+                                         None,
+                                     )
+                                     .await;
 
-                                        // Log behaviour
-                                        let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                        send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Chat (fallback)").await;
-                                    } else {
-                                        let mut text_results = Vec::new();
-                                        let mut use_embed = false;
-
-                                        for tc in tool_calls {
-                                            // Big messages like status, channels, or guilds should use embeds
-                                            if tc.tool == "get_status"
-                                                || tc.tool == "discord_get_channels"
-                                                || tc.tool == "discord_get_guilds"
-                                            {
-                                                use_embed = true;
-                                            }
-
-                                            match execute_discord_tool_call(
-                                                &app_handle_clone,
-                                                &state_clone,
-                                                &tc.tool,
-                                                &tc.args,
-                                                &guild_id,
-                                                &channel_id,
-                                                &message_id,
-                                            )
-                                            .await
-                                            {
-                                                Ok(result) => text_results.push(result),
-                                                Err(e) => {
-                                                    text_results.push(format!("Error: {}", e))
-                                                }
-                                            }
-                                        }
-
-                                        let reply_content = if text_results.is_empty() {
-                                            "Done.".to_string()
-                                        } else {
-                                            text_results.join("\n")
-                                        };
-
-                                        let body = if use_embed {
-                                            serde_json::json!({
-                                                "embeds": [{
-                                                    "color": 0x5865F2,
-                                                    "description": reply_content,
-                                                    "footer": { "text": "Pern AI" }
-                                                }],
-                                                "message_reference": {
-                                                    "message_id": message_id
-                                                }
-                                            })
-                                        } else {
-                                            serde_json::json!({
-                                                "content": reply_content,
-                                                "message_reference": {
-                                                    "message_id": message_id
-                                                }
-                                            })
-                                        };
-                                        let _ = discord_api_call(
-                                            reqwest::Method::POST,
-                                            &format!("/channels/{}/messages", channel_id),
-                                            Some(body),
-                                            &token,
-                                            None,
-                                        )
-                                        .await;
-
-                                        // Log behaviour
-                                        let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                        send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Action").await;
-                                    }
-                                });
-                            } else {
-                                println!(
-                                    "[DISCORD] Chat mention detected from non-owner {}: {}",
-                                    author_name, content
-                                );
-                                tauri::async_runtime::spawn(async move {
-                                    let reply = generate_discord_reply(
-                                        &app_handle_clone,
-                                        &state_clone,
-                                        user_msg,
-                                        &author_name,
-                                    )
-                                    .await;
-                                    let body = serde_json::json!({
-                                        "content": reply,
-                                        "message_reference": {
-                                            "message_id": message_id
-                                        }
-                                    });
-                                    let _ = discord_api_call(
-                                        reqwest::Method::POST,
-                                        &format!("/channels/{}/messages", channel_id),
-                                        Some(body),
-                                        &token,
-                                        None,
-                                    )
-                                    .await;
-
-                                    // Log behaviour
-                                    let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                    send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Non-owner Chat").await;
-                                });
-                            }
+                                     // Log behaviour
+                                     let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
+                                     send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Non-owner Chat").await;
+                                 });
+                             }
                         }
                     }
                 }
@@ -697,6 +603,7 @@ fn handle_event<'a>(
     })
 }
 
+#[allow(dead_code)]
 fn build_chat_system_prompt(author_name: &str, memory_context: &str) -> String {
     crate::chat_prompt::build_chat_system_prompt(&crate::chat_prompt::ChatPromptOptions {
         contact_name: author_name,
@@ -706,6 +613,7 @@ fn build_chat_system_prompt(author_name: &str, memory_context: &str) -> String {
     })
 }
 
+#[allow(dead_code)]
 fn build_action_system_prompt(
     _author_name: &str,
     _current_guild_id: &str,
@@ -716,158 +624,36 @@ fn build_action_system_prompt(
 }
 
 async fn generate_discord_action(
-    _app_handle: &AppHandle,
+    app_handle: &AppHandle,
     state: &AppState,
     user_message: String,
     author_name: &str,
-    current_guild_id: &str,
+    _current_guild_id: &str,
 ) -> String {
-    let (selected_model, user_memory) = {
-        let config = state.config.lock().await;
-        (config.selected_model.clone(), config.user_memory.clone())
-    };
-
-    if selected_model.is_empty() {
-        return String::new();
-    }
-
-    let mut memory_context = String::new();
-    if let Some(owner_name) = &user_memory.name {
-        memory_context.push_str(&format!(
-            "The owner of the device you are running on is {}. ",
-            owner_name
-        ));
-    }
-    if !user_memory.persona.is_empty() {
-        memory_context.push_str(&format!(
-            "Information about the owner: {}. ",
-            user_memory.persona.join("; ")
-        ));
-    }
-    if !user_memory.conversation_summary.is_empty() {
-        memory_context.push_str(&format!(
-            "Recent conversation context: {}. ",
-            user_memory.conversation_summary
-        ));
-    }
-
-    let categories = crate::tools::detect_required_tool_categories(&user_message);
-    let system_prompt = build_action_system_prompt(author_name, current_guild_id, &memory_context, &categories);
-
-    let formatted_user_message = format!(
-        "{}\n\nUser Request: {}\nPlan:\n",
-        crate::tools::get_action_few_shots_filtered(&categories),
-        user_message
-    );
-
-    let client = reqwest::Client::new();
-    let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: system_prompt,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: formatted_user_message,
-        },
-    ];
-
-    let req_body = ChatRequest {
-        model: "local".to_string(),
-        messages,
-        temperature: 0.1,
-        stream: true,
-        max_tokens: None,
-        stop: Some(vec![
-            "Request:".to_string(),
-            "User:".to_string(),
-            "User Request:".to_string(),
-            "Explicit Request:".to_string(),
-            "MODE:".to_string(),
-        ]),
-    };
-
-    let mut attempts = 0;
-    let max_attempts = 15;
-    let res;
-
-    loop {
-        let send_res = client
-            .post("http://127.0.0.1:4891/v1/chat/completions")
-            .json(&req_body)
-            .send()
-            .await;
-
-        match send_res {
-            Ok(response) => {
-                let status = response.status();
-                if status.as_u16() == 503 {
-                    attempts += 1;
-                    if attempts >= max_attempts {
-                        return String::new();
-                    }
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    continue;
-                }
-
-                if !status.is_success() {
-                    return String::new();
-                }
-
-                res = response;
-                break;
-            }
-            Err(_) => {
-                attempts += 1;
-                if attempts >= max_attempts {
-                    return String::new();
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+    match crate::chat_prompt::request_frontend_reply(
+        app_handle,
+        state,
+        "Discord",
+        author_name,
+        &user_message,
+        true,
+    )
+    .await
+    {
+        Ok(reply) => reply,
+        Err(e) => {
+            println!("[DISCORD] Failed to get action reply from frontend: {}", e);
+            "Sorry, I encountered an issue executing that command.".to_string()
         }
     }
-
-    let mut stream = res.bytes_stream();
-    let mut full_response = String::new();
-    let mut buffer = Vec::new();
-
-    while let Some(chunk_res) = stream.next().await {
-        if let Ok(chunk) = chunk_res {
-            buffer.extend_from_slice(&chunk);
-
-            let mut unparsed = Vec::new();
-            let buffer_str = String::from_utf8_lossy(&buffer);
-
-            for line in buffer_str.lines() {
-                let line = line.trim();
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
-                    if data == "[DONE]" {
-                        break;
-                    }
-                    if let Ok(response) = serde_json::from_str::<OpenAIStreamChunk>(data) {
-                        if let Some(choice) = response.choices.first() {
-                            if let Some(content) = &choice.delta.content {
-                                full_response.push_str(content);
-                            }
-                        }
-                    }
-                } else if !line.is_empty() {
-                    unparsed.extend_from_slice(line.as_bytes());
-                    unparsed.push(b'\n');
-                }
-            }
-            buffer = unparsed;
-        }
-    }
-
-    full_response
 }
 
+#[allow(dead_code)]
 fn parse_tool_calls(response_text: &str, guild_id: &str) -> Vec<ToolCall> {
     crate::tools::parse_plan_to_tool_calls(response_text, guild_id)
 }
 
+#[allow(dead_code)]
 fn detect_discord_action_intent(text: &str) -> bool {
     let lower = text.to_lowercase();
     let mut trimmed = lower.trim();
@@ -1159,6 +945,7 @@ fn find_channel_by_name(channels: &serde_json::Value, name: &str) -> Option<(Str
     None
 }
 
+#[allow(dead_code)]
 fn internal_launch_single_app(app_name: &str) -> Result<serde_json::Value, String> {
     use std::process::Command;
     let quick_script = format!(
@@ -1229,6 +1016,7 @@ fn internal_launch_single_app(app_name: &str) -> Result<serde_json::Value, Strin
     }
 }
 
+#[allow(dead_code)]
 fn internal_close_app(app_name: &str) -> Result<(), String> {
     use std::process::Command;
     let script = format!(
@@ -1325,6 +1113,7 @@ async fn get_status(state: &AppState) -> Result<String, String> {
     Ok(output)
 }
 
+#[allow(dead_code)]
 fn get_bool_arg(args: &serde_json::Value, key: &str) -> Option<bool> {
     let val = args.get(key)?;
     if let Some(b) = val.as_bool() {
@@ -1342,6 +1131,7 @@ fn get_bool_arg(args: &serde_json::Value, key: &str) -> Option<bool> {
     None
 }
 
+#[allow(dead_code)]
 fn get_u64_arg(args: &serde_json::Value, key: &str) -> Option<u64> {
     let val = args.get(key)?;
     if let Some(n) = val.as_u64() {
@@ -1355,6 +1145,7 @@ fn get_u64_arg(args: &serde_json::Value, key: &str) -> Option<u64> {
     None
 }
 
+#[allow(dead_code)]
 async fn execute_discord_tool_call(
     _app_handle: &AppHandle,
     state: &AppState,
@@ -2029,146 +1820,22 @@ async fn generate_discord_reply(
     user_message: String,
     author_name: &str,
 ) -> String {
-    let (selected_model, user_memory) = {
-        let config = state.config.lock().await;
-        (config.selected_model.clone(), config.user_memory.clone())
-    };
-
-    if selected_model.is_empty() {
-        return "I don't have a model selected to reply with.".to_string();
-    }
-
-    let mut memory_context = String::new();
-    if let Some(owner_name) = &user_memory.name {
-        memory_context.push_str(&format!(
-            "The owner of the device you are running on is {}. ",
-            owner_name
-        ));
-    }
-    if !user_memory.persona.is_empty() {
-        memory_context.push_str(&format!(
-            "Information about the owner: {}. ",
-            user_memory.persona.join("; ")
-        ));
-    }
-    if !user_memory.conversation_summary.is_empty() {
-        memory_context.push_str(&format!(
-            "Recent conversation context: {}. ",
-            user_memory.conversation_summary
-        ));
-    }
-
-    let system_prompt = build_chat_system_prompt(author_name, &memory_context);
-
-    let client = reqwest::Client::new();
-    let messages = vec![
-        ChatMessage {
-            role: "system".into(),
-            content: system_prompt,
-        },
-        ChatMessage {
-            role: "user".into(),
-            content: user_message,
-        },
-    ];
-
-    let req_body = ChatRequest {
-        model: "local".to_string(),
-        messages,
-        temperature: 0.7,
-        stream: true,
-        max_tokens: None,
-        stop: None,
-    };
-
-    let mut attempts = 0;
-    let max_attempts = 45;
-    let res;
-
-    loop {
-        let send_res = client
-            .post("http://127.0.0.1:4891/v1/chat/completions")
-            .json(&req_body)
-            .send()
-            .await;
-
-        match send_res {
-            Ok(response) => {
-                let status = response.status();
-                if status.as_u16() == 503 {
-                    attempts += 1;
-                    if attempts >= max_attempts {
-                        return "Sorry, I am still loading my brain. Please try again in a minute."
-                            .into();
-                    }
-                    let _ = app_handle.emit("app-log", serde_json::json!({
-                        "level": "info",
-                        "message": format!("[DISCORD] AI model is loading (attempt {}/{}), waiting...", attempts, max_attempts)
-                    }));
-                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    continue;
-                }
-
-                if !status.is_success() {
-                    return "Sorry, I encountered an error while thinking.".into();
-                }
-
-                res = response;
-                break;
-            }
-            Err(_) => {
-                attempts += 1;
-                if attempts >= max_attempts {
-                    return "Sorry, I am having trouble connecting to my brain right now.".into();
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+    match crate::chat_prompt::request_frontend_reply(
+        app_handle,
+        state,
+        "Discord",
+        author_name,
+        &user_message,
+        false,
+    )
+    .await
+    {
+        Ok(reply) => reply,
+        Err(e) => {
+            println!("[DISCORD] Failed to get reply from frontend: {}", e);
+            "Sorry, I encountered an issue thinking of a response.".to_string()
         }
     }
-
-    let mut stream = res.bytes_stream();
-    let mut full_response = String::new();
-    let mut buffer = Vec::new();
-
-    while let Some(chunk_res) = stream.next().await {
-        if let Ok(chunk) = chunk_res {
-            buffer.extend_from_slice(&chunk);
-
-            let mut unparsed = Vec::new();
-            let buffer_str = String::from_utf8_lossy(&buffer);
-
-            for line in buffer_str.lines() {
-                let line = line.trim();
-                if line.starts_with("data: ") {
-                    let data = &line[6..];
-                    if data == "[DONE]" {
-                        break;
-                    }
-                    if let Ok(response) = serde_json::from_str::<OpenAIStreamChunk>(data) {
-                        if let Some(choice) = response.choices.first() {
-                            if let Some(content) = &choice.delta.content {
-                                full_response.push_str(content);
-                            }
-                        }
-                    }
-                } else if !line.is_empty() {
-                    unparsed.extend_from_slice(line.as_bytes());
-                    unparsed.push(b'\n');
-                }
-            }
-            buffer = unparsed;
-        }
-    }
-
-    let _ = app_handle.emit(
-        "app-log",
-        serde_json::json!({
-            "level": "debug",
-            "message": format!("[DISCORD] Model raw output: {}", full_response)
-        }),
-    );
-
-    full_response
 }
 
 #[tauri::command]

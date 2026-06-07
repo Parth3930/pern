@@ -14,6 +14,7 @@ pub struct AppState {
     pub llama_server: Arc<Mutex<Option<Child>>>,
     pub current_model_id: Arc<Mutex<Option<String>>>,
     pub start_time: std::time::Instant,
+    pub pending_external_replies: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
 }
 
 impl AppState {
@@ -32,6 +33,7 @@ impl AppState {
             llama_server: Arc::new(Mutex::new(None)),
             current_model_id: Arc::new(Mutex::new(None)),
             start_time: std::time::Instant::now(),
+            pending_external_replies: Arc::new(Mutex::new(std::collections::HashMap::new())),
         }
     }
 }

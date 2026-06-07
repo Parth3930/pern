@@ -43,3 +43,44 @@ pub fn build_chat_system_prompt(opts: &ChatPromptOptions) -> String {
         full
     }
 }
+
+pub async fn request_frontend_reply(
+    app_handle: &tauri::AppHandle,
+    state: &crate::state::AppState,
+    platform: &str,
+    contact_name: &str,
+    user_message: &str,
+    is_owner: bool,
+) -> Result<String, String> {
+    use tauri::Emitter;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+
+    {
+        let mut map = state.pending_external_replies.lock().await;
+        map.insert(request_id.clone(), tx);
+    }
+
+    app_handle
+        .emit(
+            "request-external-reply",
+            serde_json::json!({
+                "request_id": request_id,
+                "platform": platform,
+                "contact_name": contact_name,
+                "user_message": user_message,
+                "is_owner": is_owner,
+            }),
+        )
+        .map_err(|e| format!("Failed to emit event: {}", e))?;
+
+    match tokio::time::timeout(std::time::Duration::from_secs(90), rx).await {
+        Ok(Ok(reply)) => Ok(reply),
+        Ok(Err(_)) => Err("Frontend response channel closed".to_string()),
+        Err(_) => {
+            let mut map = state.pending_external_replies.lock().await;
+            map.remove(&request_id);
+            Err("Timeout waiting for frontend reply".to_string())
+        }
+    }
+}
