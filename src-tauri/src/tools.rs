@@ -1,4 +1,5 @@
 /// Shared tool definitions and utilities used across all platforms (Discord, WhatsApp, Frontend).
+use crate::tools_data;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug)]
 pub struct ToolCall {
@@ -11,83 +12,40 @@ pub struct ToolCall {
 pub fn clean_tool_name(tool: &str) -> String {
     let t = tool.trim().to_lowercase();
 
-    // Known prefix hallucinations or exact mappings
-    match t.as_str() {
-        "restart" => "restart_system".to_string(),
-        "reboot" => "restart_system".to_string(),
-        "shutdown" => "shutdown_system".to_string(),
-        "poweroff" => "shutdown_system".to_string(),
-        "discord_set_discord_behaviour_channel" => "set_discord_behaviour_channel".to_string(),
-        "discord_get_cli_agents_status" => "get_cli_agents_status".to_string(),
-        "discord_get_status" => "get_status".to_string(),
-        "discord_launch_app" => "launch_app".to_string(),
-        "discord_close_app" => "close_app".to_string(),
-        "open_app" => "launch_app".to_string(),
-        "open_application" => "launch_app".to_string(),
-        "run_app" => "launch_app".to_string(),
-        "start_app" => "launch_app".to_string(),
-        "close_application" => "close_app".to_string(),
-        "stop_app" => "close_app".to_string(),
-        "exit_app" => "close_app".to_string(),
-        "kill_app" => "close_app".to_string(),
-        "discord_send_email" => "send_email".to_string(),
-        "discord_send_whatsapp_message" => "send_whatsapp_message".to_string(),
-        "discord_set_whatsapp_auto_reply" => "set_whatsapp_auto_reply".to_string(),
-        "discord_toggle_whatsapp_auto_reply" => "toggle_whatsapp_auto_reply".to_string(),
-        "send_whatsapp_auto_reply" => "toggle_whatsapp_auto_reply".to_string(),
-        "discord_send_to_cli_agent" => "send_to_cli_agent".to_string(),
-        "discord_get_user_behaviour" => "get_user_behaviour".to_string(),
-        "discord_set_status" => "set_discord_status".to_string(),
-        "discord_set_discord_status" => "set_discord_status".to_string(),
+    // Check generated alias map
+    for &(alias, canonical) in tools_data::ALIAS_MAP {
+        if t == alias {
+            return canonical.to_string();
+        }
+    }
 
-        // Omitted prefixes (short forms used by models)
-        "kick" => "discord_kick".to_string(),
-        "ban" => "discord_ban".to_string(),
-        "unban" => "discord_unban".to_string(),
-        "mute" => "discord_mute".to_string(),
-        "unmute" => "discord_unmute".to_string(),
-        "warn" => "discord_warn".to_string(),
-        "assign_role" => "discord_assign_role".to_string(),
-        "remove_role" => "discord_remove_role".to_string(),
-        "delete_messages" => "discord_delete_messages".to_string(),
-        "send_dm" => "discord_send_dm".to_string(),
-        "get_channels" => "discord_get_channels".to_string(),
-        "send_channel_message" => "discord_send_channel_message".to_string(),
-        "get_guilds" => "discord_get_guilds".to_string(),
-        _ => {
-            // Fuzzy matches
-            if t.contains("behaviour_channel") {
-                "set_discord_behaviour_channel".to_string()
-            } else if t.contains("user_behaviour") {
-                "get_user_behaviour".to_string()
-            } else if t.contains("cli_agents_status") {
-                "get_cli_agents_status".to_string()
-            } else if t.contains("cli_agent") && t.starts_with("send_") {
-                "send_to_cli_agent".to_string()
-            } else if t == "whatsapp_message" || t == "send_whatsapp" {
-                "send_whatsapp_message".to_string()
-            } else if t.starts_with("send_message_to_") {
-                // Handle model hallucinating recipient name into tool name, e.g. "send_message_to_rover"
-                "send_whatsapp_message".to_string()
-            } else if t == "email" || t == "send_mail" {
-                "send_email".to_string()
-            } else if t == "whatsapp_auto_reply" || t == "whatsapp_auto" {
-                "set_whatsapp_auto_reply".to_string()
-            } else {
-                // If it's a known discord tool without the prefix
-                let discord_suffixes = [
-                    "kick", "ban", "unban", "mute", "unmute", "warn",
-                    "delete_messages", "assign_role", "remove_role",
-                    "send_dm", "get_channels", "send_channel_message", "get_guilds"
-                ];
-                for suffix in &discord_suffixes {
-                    if t == *suffix || t == format!("discord_{}", suffix) {
-                        return format!("discord_{}", suffix);
-                    }
-                }
-                tool.to_string()
+    // Fuzzy matches
+    if t.contains("behaviour_channel") {
+        "set_discord_behaviour_channel".to_string()
+    } else if t.contains("user_behaviour") {
+        "get_user_behaviour".to_string()
+    } else if t.contains("cli_agents_status") {
+        "get_cli_agents_status".to_string()
+    } else if t.contains("cli_agent") && t.starts_with("send_") {
+        "send_to_cli_agent".to_string()
+    } else if t == "whatsapp_message" || t == "send_whatsapp" {
+        "send_whatsapp_message".to_string()
+    } else if t.starts_with("send_message_to_") {
+        // Handle model hallucinating recipient name into tool name, e.g. "send_message_to_rover"
+        "send_whatsapp_message".to_string()
+    } else if t == "email" || t == "send_mail" {
+        "send_email".to_string()
+    } else if t == "whatsapp_auto_reply" || t == "whatsapp_auto" {
+        "set_whatsapp_auto_reply".to_string()
+    } else {
+        // If it's a known discord tool without the prefix
+        for &suffix in tools_data::DISCORD_TOOLS_WITH_GUILD_ID {
+            let short_suffix = suffix.strip_prefix("discord_").unwrap_or(suffix);
+            if t == short_suffix || t == suffix {
+                return suffix.to_string();
             }
         }
+        tool.to_string()
     }
 }
 
@@ -143,40 +101,12 @@ fn has_unquoted_equals(s: &str) -> bool {
 }
 
 pub fn get_tool_params(tool: &str) -> &'static [&'static str] {
-    match tool {
-        "launch_app" => &["app_name"],
-        "close_app" => &["app_name"],
-        "send_whatsapp_message" => &["recipient", "message"],
-        "set_whatsapp_auto_reply" => &["recipient", "enabled"],
-        "toggle_whatsapp_auto_reply" => &["recipient"],
-        "toggle_whatsapp" => &["enabled"],
-        "set_discord_status" => &["status", "activity"],
-        "discord_get_channels" => &[],
-        "discord_send_channel_message" => &["channel_name", "message"],
-        "send_email" => &["to", "subject", "body"],
-        "save_email_config" => &["smtp_host", "smtp_port", "sender_email", "smtp_password"],
-        "add_whatsapp_contact" => &["name", "number"],
-        "discord_kick" => &["user_id", "reason"],
-        "discord_ban" => &["user_id", "reason", "delete_message_seconds"],
-        "discord_unban" => &["user_id"],
-        "discord_mute" => &["user_id", "duration_mins", "reason"],
-        "discord_unmute" => &["user_id"],
-        "discord_warn" => &["user_id", "reason"],
-        "discord_delete_messages" => &["channel_id", "count"],
-        "discord_assign_role" => &["user_id", "role_id"],
-        "discord_remove_role" => &["user_id", "role_id"],
-        "discord_send_dm" => &["user_id", "message"],
-        "discord_get_guilds" => &[],
-        "get_status" => &[],
-        "set_discord_behaviour_channel" => &["channel_id"],
-        "get_user_behaviour" => &["user_id"],
-        "send_to_cli_agent" => &["agent_name", "prompt", "project_name"],
-        "get_cli_agents_status" => &[],
-        "restart_system" => &[],
-        "shutdown_system" => &[],
-        "add_todo" => &["text", "time", "repeat_hours"],
-        _ => &[],
+    for t in tools_data::TOOLS {
+        if t.name == tool {
+            return t.params;
+        }
     }
+    &[]
 }
 
 /// Parse a plan-format response (lines starting with "- tool(args)") into typed tool calls.
@@ -351,20 +281,7 @@ pub fn parse_plan_to_tool_calls(plan_text: &str, guild_id: &str) -> Vec<ToolCall
         }
 
         // Auto-inject guild_id for Discord tools that need it
-        let discord_tools_with_guild_id = [
-            "discord_get_channels",
-            "discord_send_channel_message",
-            "discord_kick",
-            "discord_ban",
-            "discord_unban",
-            "discord_mute",
-            "discord_unmute",
-            "discord_warn",
-            "discord_assign_role",
-            "discord_remove_role"
-        ];
-
-        if discord_tools_with_guild_id.contains(&tool.as_str()) && !guild_id.is_empty() {
+        if tools_data::DISCORD_TOOLS_WITH_GUILD_ID.contains(&tool.as_str()) && !guild_id.is_empty() {
             args.insert("guild_id".to_string(), serde_json::Value::String(guild_id.to_string()));
         }
 
@@ -412,121 +329,6 @@ pub fn parse_plan_to_tool_calls(plan_text: &str, guild_id: &str) -> Vec<ToolCall
 
     tool_calls
 }
-
-struct ToolDefinition {
-    category: &'static str,
-    signature: &'static str,
-}
-
-const TOOL_DEFINITIONS: &[ToolDefinition] = &[
-    ToolDefinition { category: "system", signature: "- launch_app(app_name: string) -> Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\")." },
-    ToolDefinition { category: "system", signature: "- close_app(app_name: string) -> Closes an app by name." },
-    ToolDefinition { category: "whatsapp", signature: "- send_whatsapp_message(recipient: string, message: string) -> Sends WhatsApp message." },
-    ToolDefinition { category: "whatsapp", signature: "- set_whatsapp_auto_reply(recipient: string, enabled: boolean) -> Enables (true) or disables (false) WhatsApp auto reply for recipient." },
-    ToolDefinition { category: "whatsapp", signature: "- toggle_whatsapp_auto_reply(recipient: string) -> Toggles WhatsApp auto reply for recipient." },
-    ToolDefinition { category: "whatsapp", signature: "- toggle_whatsapp(enabled: boolean) -> Toggles global WhatsApp auto-reply on/off." },
-    ToolDefinition { category: "discord", signature: "- set_discord_status(status: string, activity: string) -> Sets bot status and activity." },
-    ToolDefinition { category: "discord", signature: "- discord_get_channels() -> Lists channels in a server." },
-    ToolDefinition { category: "discord", signature: "- discord_send_channel_message(channel_name: string, message: string) -> Sends message to a server channel." },
-    ToolDefinition { category: "email", signature: "- send_email(to: string, subject: string, body: string) -> Sends email." },
-    ToolDefinition { category: "email", signature: "- save_email_config(smtp_host: string, smtp_port: number, sender_email: string, smtp_password: string) -> Saves SMTP config." },
-    ToolDefinition { category: "whatsapp", signature: "- add_whatsapp_contact(name: string, number: string) -> Adds a contact to the allowed auto-reply list." },
-    ToolDefinition { category: "discord", signature: "- discord_kick(user_id: string, reason: string) -> Kicks user from server." },
-    ToolDefinition { category: "discord", signature: "- discord_ban(user_id: string, reason: string, delete_message_seconds: number) -> Bans user from server." },
-    ToolDefinition { category: "discord", signature: "- discord_unban(user_id: string) -> Unbans user." },
-    ToolDefinition { category: "discord", signature: "- discord_mute(user_id: string, duration_mins: number, reason: string) -> Mutes user." },
-    ToolDefinition { category: "discord", signature: "- discord_unmute(user_id: string) -> Unmutes user." },
-    ToolDefinition { category: "discord", signature: "- discord_warn(user_id: string, reason: string) -> Warns user via DM." },
-    ToolDefinition { category: "discord", signature: "- discord_delete_messages(channel_id: string, count: number) -> Purges last count messages." },
-    ToolDefinition { category: "discord", signature: "- discord_assign_role(user_id: string, role_id: string) -> Assigns role to user." },
-    ToolDefinition { category: "discord", signature: "- discord_remove_role(user_id: string, role_id: string) -> Removes role from user." },
-    ToolDefinition { category: "discord", signature: "- discord_send_dm(user_id: string, message: string) -> Sends Discord DM to user." },
-    ToolDefinition { category: "discord", signature: "- discord_get_guilds() -> Lists Discord servers." },
-    ToolDefinition { category: "system", signature: "- get_status() -> Gets system uptime and health." },
-    ToolDefinition { category: "discord", signature: "- set_discord_behaviour_channel(channel_id: string) -> Sets behaviour log channel." },
-    ToolDefinition { category: "discord", signature: "- get_user_behaviour(user_id: string) -> Gets user behaviour log." },
-    ToolDefinition { category: "agents", signature: "- send_to_cli_agent(agent_name: string, prompt: string, project_name: string) -> Runs CLI agent (agy, claude-code, codex, hermes, freebuff)." },
-    ToolDefinition { category: "agents", signature: "- get_cli_agents_status() -> Gets CLI agents status." },
-    ToolDefinition { category: "system", signature: "- restart_system() -> Restarts the system (computer)." },
-    ToolDefinition { category: "system", signature: "- shutdown_system() -> Shuts down the system (computer)." },
-    ToolDefinition { category: "todos", signature: "- add_todo(text: string, time?: string, repeat_hours?: number) -> Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional." },
-];
-
-struct FewShotExample {
-    categories: &'static [&'static str],
-    text: &'static str,
-}
-
-const FEW_SHOT_EXAMPLES: &[FewShotExample] = &[
-    FewShotExample {
-        categories: &[],
-        text: "User Request: what is the capital of France?\nPlan:\n- conversational()",
-    },
-    FewShotExample {
-        categories: &["system"],
-        text: "User Request: open whatsapp and close notepad\nPlan:\n- launch_app(app_name=\"whatsapp\")\n- close_app(app_name=\"notepad\")",
-    },
-    FewShotExample {
-        categories: &["system"],
-        text: "User Request: shut down my computer\nPlan:\n- shutdown_system()",
-    },
-    FewShotExample {
-        categories: &["system"],
-        text: "User Request: restart the system\nPlan:\n- restart_system()",
-    },
-    FewShotExample {
-        categories: &["whatsapp"],
-        text: "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\nPlan:\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\n- launch_app(app_name=\"whatsapp\")\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)",
-    },
-    FewShotExample {
-        categories: &["discord"],
-        text: "User Request: warn <@456> for toxicity, then mute them for 10 minutes, then assign role 888 to them, then log this in channel logs saying warned and muted user 456\nPlan:\n- discord_warn(user_id=\"456\", reason=\"toxicity\")\n- discord_mute(user_id=\"456\", duration_mins=10, reason=\"toxicity\")\n- discord_assign_role(user_id=\"456\", role_id=\"888\")\n- discord_send_channel_message(channel_name=\"logs\", message=\"warned and muted user 456\")",
-    },
-    FewShotExample {
-        categories: &["discord"],
-        text: "User Request: dm <@123> asking if they can review the change\nPlan:\n- discord_send_dm(user_id=\"123\", message=\"Hey, can you review the change?\")",
-    },
-    FewShotExample {
-        categories: &["discord"],
-        text: "User Request: send a message to general channel saying hello everyone\nPlan:\n- discord_send_channel_message(channel_name=\"general\", message=\"hello everyone\")",
-    },
-    FewShotExample {
-        categories: &["email", "discord"],
-        text: "User Request: save email config with host smtp.gmail.com port 587 sender me@gmail.com and password pass123, then send email to alice@gmail.com with subject Report and say hello, then dm <@456> asking if they can check it\nPlan:\n- save_email_config(smtp_host=\"smtp.gmail.com\", smtp_port=587, sender_email=\"me@gmail.com\", smtp_password=\"pass123\")\n- send_email(to=\"alice@gmail.com\", subject=\"Report\", body=\"hello\")\n- discord_send_dm(user_id=\"456\", message=\"Hey, can you check it?\")",
-    },
-    FewShotExample {
-        categories: &["agents", "whatsapp"],
-        text: "User Request: run agy on project Pern to build it, then run freebuff to run tests, and if both are done message Bob saying all good, and toggle auto reply for him\nPlan:\n- send_to_cli_agent(agent_name=\"agy\", prompt=\"build it\", project_name=\"Pern\")\n- send_to_cli_agent(agent_name=\"freebuff\", prompt=\"run tests\", project_name=\"Pern\")\n- send_whatsapp_message(recipient=\"Bob\", message=\"all good\")\n- toggle_whatsapp_auto_reply(recipient=\"Bob\")",
-    },
-    FewShotExample {
-        categories: &["system", "discord"],
-        text: "User Request: open chrome and calculator, do some math, then close both chrome and calculator, get status of cli agents, and set my discord status to idle with activity away\nPlan:\n- launch_app(app_name=\"chrome\")\n- launch_app(app_name=\"calculator\")\n- close_app(app_name=\"chrome\")\n- close_app(app_name=\"calculator\")\n- get_cli_agents_status()\n- set_discord_status(status=\"idle\", activity=\"away\")",
-    },
-    FewShotExample {
-        categories: &["whatsapp"],
-        text: "User Request: add contact Alice with number +9876543, then message Alice saying hello, then do that message again, then message Dave on WhatsApp saying hi Alice joined, then do the Dave message twice more\nPlan:\n- add_whatsapp_contact(name=\"Alice\", number=\"+9876543\")\n- send_whatsapp_message(recipient=\"Alice\", message=\"hello\")\n- send_whatsapp_message(recipient=\"Alice\", message=\"hello\")\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")",
-    },
-    FewShotExample {
-        categories: &["discord"],
-        text: "User Request: ban <@789> for raiding, delete 30 messages in channel 888888, then set behaviour log channel to 888888, then get behaviour logs for <@789> to verify\nPlan:\n- discord_ban(user_id=\"789\", reason=\"raiding\", delete_message_seconds=0)\n- discord_delete_messages(channel_id=\"888888\", count=30)\n- set_discord_behaviour_channel(channel_id=\"888888\")\n- get_user_behaviour(user_id=\"789\")",
-    },
-    FewShotExample {
-        categories: &["whatsapp", "email"],
-        text: "User Request: send a whatsapp message to Alice asking if she can check the report, then email her at alice@gmail.com with subject Report Review and body please check the report, then do that email again, then tell her on whatsapp that it is sent\nPlan:\n- send_whatsapp_message(recipient=\"Alice\", message=\"Hey Alice, can you check the report?\")\n- send_email(to=\"alice@gmail.com\", subject=\"Report Review\", body=\"please check the report\")\n- send_email(to=\"alice@gmail.com\", subject=\"Report Review\", body=\"please check the report\")\n- send_whatsapp_message(recipient=\"Alice\", message=\"it is sent\")",
-    },
-    FewShotExample {
-        categories: &["whatsapp", "discord"],
-        text: "User Request: turn global whatsapp auto reply off, then unban <@111> on discord\nPlan:\n- toggle_whatsapp(enabled=false)\n- discord_unban(user_id=\"111\")",
-    },
-    FewShotExample {
-        categories: &["whatsapp"],
-        text: "User Request: message Charlie on WhatsApp asking how he is, and toggle auto reply for him\nPlan:\n- send_whatsapp_message(recipient=\"Charlie\", message=\"Hey Charlie, how are you?\")\n- toggle_whatsapp_auto_reply(recipient=\"Charlie\")",
-    },
-    FewShotExample {
-        categories: &["whatsapp"],
-        text: "[Owner context: Recent WhatsApp details: ### LAST WHATSAPP\nRecipient(s): Rahul\nMessage: this is a test]\n\nUser Request: send the same message to Parth\nPlan:\n- send_whatsapp_message(recipient=\"Parth\", message=\"this is a test\")",
-    },
-];
 
 pub fn detect_required_tool_categories(user_message: &str) -> Vec<String> {
     let mut categories = std::collections::HashSet::new();
@@ -591,17 +393,15 @@ pub fn detect_required_tool_categories(user_message: &str) -> Vec<String> {
     res
 }
 
-/// Build the shared action system prompt used by Discord, WhatsApp, and all platforms.
-/// The prompt tells the model how to output tool calls in plan format.
 pub fn build_action_system_prompt(memory_context: &str, categories: &[String]) -> String {
     let signatures = if categories.is_empty() {
-        TOOL_DEFINITIONS
+        tools_data::TOOLS
             .iter()
             .map(|t| t.signature)
             .collect::<Vec<_>>()
             .join("\n")
     } else {
-        TOOL_DEFINITIONS
+        tools_data::TOOLS
             .iter()
             .filter(|t| categories.contains(&t.category.to_string()))
             .map(|t| t.signature)
@@ -610,63 +410,24 @@ pub fn build_action_system_prompt(memory_context: &str, categories: &[String]) -
     };
 
     let has = |c: &str| categories.contains(&c.to_string());
-    let is_messaging = has("whatsapp") || has("discord") || has("email");
 
     let mut rules: Vec<String> = Vec::new();
-    rules.push("You are Pern's AI Agent. Your job is to translate user requests directly into a list of tool actions starting with \"- \".".to_string());
-    rules.push("If the request is conversational (e.g. greetings, questions with no tool mapping), output exactly: Plan:\\n- conversational()".to_string());
+    
+    // Header rules (first two rules)
+    for rule in tools_data::RULES.iter().take(2) {
+        rules.push(rule.text.to_string());
+    }
+    
     rules.push(String::new());
     rules.push("IMPORTANT RULES:".to_string());
 
-    rules.push("1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.".to_string());
-    rules.push("2. Resolve pronouns (it, them) to their original referents. Always output actions in the exact chronological order requested.".to_string());
-
-    if has("discord") {
-        rules.push("3. Do not output guild_id; it's auto-injected.".to_string());
-    }
-
-    if is_messaging {
-        rules.push("4. MESSAGE FORMATTING:".to_string());
-        if has("whatsapp") || has("discord") {
-            rules.push("   a. \"saying [text]\" or \"say [text]\" -> use that exact text as message. This overrides any prefix rule.".to_string());
-            rules.push("   b. Convert indirect requests (\"ask if he is available\") to direct speech: \"Hey [name], are you available?\"".to_string());
-        }
-        if has("whatsapp") {
-            rules.push("   c. \"message Bob to open discord\" = send_whatsapp_message(\"Bob\", \"open discord\"), NOT launch_app. Do not execute actions inside a message.".to_string());
-        }
-        if has("discord") {
-            rules.push("   d. \"dm <@123> asking...\" -> discord_send_dm(user_id, \"Hey, can you...\"). Prefix DMs for mentions with \"Hey, \".".to_string());
-        }
-        if has("whatsapp") || has("discord") {
-            rules.push("   e. For named contacts, ALWAYS prefix messages with \"Hey [name], \" unless rule 4a applies. For <@mentions>, use \"Hey, \" instead.".to_string());
-            rules.push("   g. Preserve the exact spelling and casing of all names as written in the request.".to_string());
-        }
-        if has("email") {
-            rules.push("   f. Preserve the exact spelling and casing of all names and recipients as written in the request.".to_string());
+    // Remaining rules
+    for rule in tools_data::RULES.iter().skip(2) {
+        let is_applicable = rule.categories.is_empty() || rule.categories.iter().any(|cat| categories.contains(&cat.to_string()));
+        if is_applicable {
+            rules.push(rule.text.to_string());
         }
     }
-
-    if has("whatsapp") {
-        rules.push("5. AUTO-REPLY: \"turn auto reply on/off\" = set_whatsapp_auto_reply(recipient, enabled). Only use toggle_whatsapp_auto_reply when \"toggle\" is explicitly used.".to_string());
-    }
-
-    if has("discord") {
-        rules.push("6. BAN VS DELETE: discord_ban's delete_message_seconds is ONLY for deleting the banned user's history. Channel message purging MUST use discord_delete_messages.".to_string());
-    }
-
-    rules.push("7. NO CODE: NEVER output code blocks, if/else, loops, variables, or comments. Output ONLY a flat list of tool calls starting with \"- \".".to_string());
-    rules.push("8. NO HALLUCINATED TOOLS: Only use the allowed tools listed below.".to_string());
-
-    if has("discord") {
-        rules.push("9. REASON PROPAGATION: If a reason is given for the first action in a chain (e.g. \"warn for spamming, then mute\"), propagate it to subsequent relevant actions.".to_string());
-    }
-
-    if has("whatsapp") && has("discord") {
-        rules.push("10. DISCORD VS WHATSAPP: Channel/role/ban/mute/unban/<@mentions> map to Discord tools. Do NOT use send_whatsapp_message for Discord.".to_string());
-    }
-
-    rules.push("11. For 3+ actions, output a \"Todo:\" section before \"Plan:\". For simple requests, omit Todo.".to_string());
-    rules.push("12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.".to_string());
 
     if has("todos") {
         use chrono::Timelike;
@@ -704,68 +465,25 @@ pub fn build_action_system_prompt(memory_context: &str, categories: &[String]) -
 Owner context: {}", rules_str, signatures, full_memory)
 }
 
-/// Get the list of all canonical tool names.
 pub fn all_tool_names() -> Vec<&'static str> {
-    vec![
-        "launch_app",
-        "close_app",
-        "send_whatsapp_message",
-        "set_whatsapp_auto_reply",
-        "toggle_whatsapp_auto_reply",
-        "set_discord_status",
-        "discord_get_channels",
-        "discord_send_channel_message",
-        "send_email",
-        "discord_kick",
-        "discord_ban",
-        "discord_unban",
-        "discord_mute",
-        "discord_unmute",
-        "discord_warn",
-        "discord_delete_messages",
-        "discord_assign_role",
-        "discord_remove_role",
-        "discord_send_dm",
-        "discord_get_guilds",
-        "get_status",
-        "set_discord_behaviour_channel",
-        "get_user_behaviour",
-        "send_to_cli_agent",
-        "get_cli_agents_status",
-        "restart_system",
-        "shutdown_system",
-        "add_todo",
-    ]
+    tools_data::TOOLS.iter().map(|t| t.name).collect()
 }
 
-/// Discord tools that automatically get guild_id injected.
 pub fn discord_tools_with_guild_id() -> Vec<&'static str> {
-    vec![
-        "discord_get_channels",
-        "discord_send_channel_message",
-        "discord_kick",
-        "discord_ban",
-        "discord_unban",
-        "discord_mute",
-        "discord_unmute",
-        "discord_warn",
-        "discord_assign_role",
-        "discord_remove_role",
-    ]
+    tools_data::DISCORD_TOOLS_WITH_GUILD_ID.to_vec()
 }
 
 const MAX_FEW_SHOTS: usize = 4;
 
 pub fn get_action_few_shots_filtered(categories: &[String]) -> String {
-    let examples: Vec<&FewShotExample> = if categories.is_empty() {
-        FEW_SHOT_EXAMPLES.iter().collect()
+    let examples: Vec<&tools_data::FewShotExample> = if categories.is_empty() {
+        tools_data::FEW_SHOTS.iter().collect()
     } else {
-        FEW_SHOT_EXAMPLES
+        tools_data::FEW_SHOTS
             .iter()
             .filter(|e| e.categories.is_empty() || e.categories.iter().any(|cat| categories.contains(&cat.to_string())))
             .collect()
     };
-    // Limit few-shots to avoid exceeding small model context windows (e.g. 4096 tokens)
     examples
         .into_iter()
         .take(MAX_FEW_SHOTS)
@@ -774,8 +492,6 @@ pub fn get_action_few_shots_filtered(categories: &[String]) -> String {
         .join("\n\n")
 }
 
-/// Get the unified action few-shot examples as a string.
 pub fn get_action_few_shots() -> String {
     get_action_few_shots_filtered(&[])
 }
-

@@ -1,176 +1,36 @@
 /// Shared tool definitions used across all platforms (Discord, WhatsApp, Frontend, Tests).
 /// Mirrors src-tauri/src/tools.rs
+import {
+  TOOLS,
+  ALIAS_MAP,
+  FEW_SHOTS,
+  RULES,
+  DISCORD_TOOLS_WITH_GUILD_ID,
+  TOOL_DESCRIPTIONS,
+  TOOL_PARAMS,
+} from "./tools_data";
 
-export type ToolName =
-  | "launch_app"
-  | "close_app"
-  | "send_whatsapp_message"
-  | "set_whatsapp_auto_reply"
-  | "toggle_whatsapp_auto_reply"
-  | "set_discord_status"
-  | "discord_get_channels"
-  | "discord_send_channel_message"
-  | "send_email"
-  | "save_email_config"
-  | "add_whatsapp_contact"
-  | "set_whatsapp_contact_auto_reply"
-  | "toggle_whatsapp"
-  | "discord_kick"
-  | "discord_ban"
-  | "discord_unban"
-  | "discord_mute"
-  | "discord_unmute"
-  | "discord_warn"
-  | "discord_delete_messages"
-  | "discord_assign_role"
-  | "discord_remove_role"
-  | "discord_send_dm"
-  | "discord_get_guilds"
-  | "get_status"
-  | "set_discord_behaviour_channel"
-  | "get_user_behaviour"
-  | "send_to_cli_agent"
-  | "get_cli_agents_status"
-  | "restart_system"
-  | "shutdown_system"
-  | "add_todo";
-
+export type ToolName = typeof TOOLS[number]["name"];
 export type ToolArgs = Record<string, unknown>;
 
 export interface ToolCall {
-  tool: string;
+  tool: ToolName | string;
   args: Record<string, unknown>;
 }
 
 /** All canonical tool names */
-export const ALL_TOOL_NAMES: ToolName[] = [
-  "launch_app",
-  "close_app",
-  "send_whatsapp_message",
-  "set_whatsapp_auto_reply",
-  "toggle_whatsapp_auto_reply",
-  "set_discord_status",
-  "discord_get_channels",
-  "discord_send_channel_message",
-  "send_email",
-  "save_email_config",
-  "add_whatsapp_contact",
-  "set_whatsapp_contact_auto_reply",
-  "toggle_whatsapp",
-  "discord_kick",
-  "discord_ban",
-  "discord_unban",
-  "discord_mute",
-  "discord_unmute",
-  "discord_warn",
-  "discord_delete_messages",
-  "discord_assign_role",
-  "discord_remove_role",
-  "discord_send_dm",
-  "discord_get_guilds",
-  "get_status",
-  "set_discord_behaviour_channel",
-  "get_user_behaviour",
-  "send_to_cli_agent",
-  "get_cli_agents_status",
-  "restart_system",
-  "shutdown_system",
-  "add_todo",
-];
+export const ALL_TOOL_NAMES: ToolName[] = TOOLS.map((t) => t.name) as ToolName[];
 
-/** Discord tools that automatically get guild_id injected */
-export const DISCORD_TOOLS_WITH_GUILD_ID: string[] = [
-  "discord_get_channels",
-  "discord_send_channel_message",
-  "discord_kick",
-  "discord_ban",
-  "discord_unban",
-  "discord_mute",
-  "discord_unmute",
-  "discord_warn",
-  "discord_assign_role",
-  "discord_remove_role",
-];
-
-/** Tool descriptions for the action system prompt */
-export const TOOL_DESCRIPTIONS: Record<string, string> = {
-  launch_app: 'Opens an app by name ("calculator", "notepad", "chrome", "discord").',
-  close_app: 'Closes an app by name.',
-  send_whatsapp_message: 'Sends WhatsApp message.',
-  set_whatsapp_auto_reply: 'Enables (true) or disables (false) WhatsApp auto reply for recipient.',
-  toggle_whatsapp_auto_reply: 'Toggles WhatsApp auto reply for recipient.',
-  toggle_whatsapp: 'Toggles global WhatsApp auto-reply on/off.',
-  set_discord_status: 'Sets bot status and activity.',
-  discord_get_channels: 'Lists channels in a server.',
-  discord_send_channel_message: 'Sends message to a server channel.',
-  send_email: 'Sends email.',
-  save_email_config: 'Saves SMTP config.',
-  add_whatsapp_contact: 'Adds a contact to the allowed auto-reply list.',
-  set_whatsapp_contact_auto_reply: 'Sets auto-reply for a WhatsApp contact.',
-  discord_kick: 'Kicks user from server.',
-  discord_ban: 'Bans user from server.',
-  discord_unban: 'Unbans user.',
-  discord_mute: 'Mutes user.',
-  discord_unmute: 'Unmutes user.',
-  discord_warn: 'Warns user via DM.',
-  discord_delete_messages: 'Purges last count messages.',
-  discord_assign_role: 'Assigns role to user.',
-  discord_remove_role: 'Removes role from user.',
-  discord_send_dm: 'Sends Discord DM to user.',
-  discord_get_guilds: 'Lists Discord servers.',
-  get_status: 'Gets system uptime and health.',
-  set_discord_behaviour_channel: 'Sets behaviour log channel.',
-  get_user_behaviour: 'Gets user behaviour log.',
-  send_to_cli_agent: 'Runs CLI agent (agy, claude-code, codex, hermes, freebuff).',
-  get_cli_agents_status: 'Gets CLI agents status.',
-  restart_system: 'Restarts the system (computer).',
-  shutdown_system: 'Shuts down the system (computer).',
-  add_todo: 'Adds a new todo task/reminder. time is optional (local ISO string without Z, e.g. "2026-06-05T12:00:00"). repeat_hours is optional (number of hours between repeats, e.g. 2 for every 2 hours, 24 for daily).',
-};
+export { DISCORD_TOOLS_WITH_GUILD_ID, TOOL_DESCRIPTIONS, TOOL_PARAMS };
 
 /** Tool signatures for the action prompt */
 export function getToolSignatures(categories?: string[]): string {
-  const entries = [
-    ["launch_app", "app_name: string", "system"],
-    ["close_app", "app_name: string", "system"],
-    ["send_whatsapp_message", "recipient: string, message: string", "whatsapp"],
-    ["set_whatsapp_auto_reply", "recipient: string, enabled: boolean", "whatsapp"],
-    ["toggle_whatsapp_auto_reply", "recipient: string", "whatsapp"],
-    ["toggle_whatsapp", "enabled: boolean", "whatsapp"],
-    ["set_discord_status", "status: string, activity: string", "discord"],
-    ["discord_get_channels", "", "discord"],
-    ["discord_send_channel_message", "channel_name: string, message: string", "discord"],
-    ["send_email", "to: string, subject: string, body: string", "email"],
-    ["save_email_config", "smtp_host: string, smtp_port: number, sender_email: string, smtp_password: string", "email"],
-    ["add_whatsapp_contact", "name: string, number: string", "whatsapp"],
-    ["discord_kick", "user_id: string, reason: string", "discord"],
-    ["discord_ban", "user_id: string, reason: string, delete_message_seconds: number", "discord"],
-    ["discord_unban", "user_id: string", "discord"],
-    ["discord_mute", "user_id: string, duration_mins: number, reason: string", "discord"],
-    ["discord_unmute", "user_id: string", "discord"],
-    ["discord_warn", "user_id: string, reason: string", "discord"],
-    ["discord_delete_messages", "channel_id: string, count: number", "discord"],
-    ["discord_assign_role", "user_id: string, role_id: string", "discord"],
-    ["discord_remove_role", "user_id: string, role_id: string", "discord"],
-    ["discord_send_dm", "user_id: string, message: string", "discord"],
-    ["discord_get_guilds", "", "discord"],
-    ["get_status", "", "system"],
-    ["set_discord_behaviour_channel", "channel_id: string", "discord"],
-    ["get_user_behaviour", "user_id: string", "discord"],
-    ["send_to_cli_agent", "agent_name: string, prompt: string, project_name: string", "agents"],
-    ["get_cli_agents_status", "", "agents"],
-    ["restart_system", "", "system"],
-    ["shutdown_system", "", "system"],
-    ["add_todo", "text: string, time?: string, repeat_hours?: number", "todos"],
-  ] as const;
+  const filtered =
+    !categories || categories.length === 0
+      ? TOOLS
+      : TOOLS.filter((t) => categories.includes(t.category));
 
-  const filtered = (!categories || categories.length === 0)
-    ? entries
-    : entries.filter(([, , cat]) => categories.includes(cat));
-
-  return filtered
-    .map(([name, args]) => `- ${name}(${args}) -> ${TOOL_DESCRIPTIONS[name]}`)
-    .join("\n");
+  return filtered.map((t) => t.signature).join("\n");
 }
 
 /**
@@ -180,73 +40,28 @@ export function getToolSignatures(categories?: string[]): string {
 export function cleanToolName(tool: string): string {
   const t = tool.trim().toLowerCase();
 
-  // Known prefix hallucinations or exact mappings
-  const exactMap: Record<string, string> = {
-    "discord_set_discord_behaviour_channel": "set_discord_behaviour_channel",
-    "discord_get_cli_agents_status": "get_cli_agents_status",
-    "discord_get_status": "get_status",
-    "discord_launch_app": "launch_app",
-    "discord_close_app": "close_app",
-    "open_app": "launch_app",
-    "open_application": "launch_app",
-    "run_app": "launch_app",
-    "start_app": "launch_app",
-    "close_application": "close_app",
-    "stop_app": "close_app",
-    "exit_app": "close_app",
-    "kill_app": "close_app",
-    "discord_send_email": "send_email",
-    "discord_send_whatsapp_message": "send_whatsapp_message",
-    "discord_set_whatsapp_auto_reply": "set_whatsapp_auto_reply",
-    "discord_toggle_whatsapp_auto_reply": "toggle_whatsapp_auto_reply",
-    "send_whatsapp_auto_reply": "toggle_whatsapp_auto_reply",
-    "discord_send_to_cli_agent": "send_to_cli_agent",
-    "discord_get_user_behaviour": "get_user_behaviour",
-    "discord_set_status": "set_discord_status",
-    "discord_set_discord_status": "set_discord_status",
-    // Omitted prefixes (short forms used by models)
-    "kick": "discord_kick",
-    "ban": "discord_ban",
-    "unban": "discord_unban",
-    "mute": "discord_mute",
-    "unmute": "discord_unmute",
-    "warn": "discord_warn",
-    "assign_role": "discord_assign_role",
-    "remove_role": "discord_remove_role",
-    "delete_messages": "discord_delete_messages",
-    "send_dm": "discord_send_dm",
-    "get_channels": "discord_get_channels",
-    "send_channel_message": "discord_send_channel_message",
-    "get_guilds": "discord_get_guilds",
-    "restart": "restart_system",
-    "reboot": "restart_system",
-    "shutdown": "shutdown_system",
-    "poweroff": "shutdown_system",
-  };
-
-  if (exactMap[t]) {
-    return exactMap[t];
+  if (t in ALIAS_MAP) {
+    return ALIAS_MAP[t as keyof typeof ALIAS_MAP];
   }
 
   // Fuzzy matches
   if (t.includes("behaviour_channel")) return "set_discord_behaviour_channel";
   if (t.includes("user_behaviour")) return "get_user_behaviour";
   if (t.includes("cli_agents_status")) return "get_cli_agents_status";
-  if (t.includes("cli_agent") && t.startsWith("send_")) return "send_to_cli_agent";
-  if (t === "whatsapp_message" || t === "send_whatsapp") return "send_whatsapp_message";
+  if (t.includes("cli_agent") && t.startsWith("send_"))
+    return "send_to_cli_agent";
+  if (t === "whatsapp_message" || t === "send_whatsapp")
+    return "send_whatsapp_message";
   if (/^send_message_to_/.test(t)) return "send_whatsapp_message";
   if (t === "email" || t === "send_mail") return "send_email";
-  if (t === "whatsapp_auto_reply" || t === "whatsapp_auto") return "set_whatsapp_auto_reply";
+  if (t === "whatsapp_auto_reply" || t === "whatsapp_auto")
+    return "set_whatsapp_auto_reply";
 
   // If it's a known discord tool without the prefix
-  const discordSuffixes = [
-    "kick", "ban", "unban", "mute", "unmute", "warn",
-    "delete_messages", "assign_role", "remove_role",
-    "send_dm", "get_channels", "send_channel_message", "get_guilds",
-  ];
-  for (const suffix of discordSuffixes) {
-    if (t === suffix || t === `discord_${suffix}`) {
-      return `discord_${suffix}`;
+  for (const suffix of DISCORD_TOOLS_WITH_GUILD_ID) {
+    const shortSuffix = suffix.startsWith("discord_") ? suffix.slice(8) : suffix;
+    if (t === shortSuffix || t === suffix) {
+      return suffix;
     }
   }
 
@@ -265,53 +80,20 @@ function parseValue(valStr: string): unknown {
   return trimmed;
 }
 
-const TOOL_PARAMS: Record<string, string[]> = {
-  launch_app: ["app_name"],
-  close_app: ["app_name"],
-  send_whatsapp_message: ["recipient", "message"],
-  set_whatsapp_auto_reply: ["recipient", "enabled"],
-  toggle_whatsapp_auto_reply: ["recipient"],
-  toggle_whatsapp: ["enabled"],
-  set_discord_status: ["status", "activity"],
-  discord_get_channels: [],
-  discord_send_channel_message: ["channel_name", "message"],
-  send_email: ["to", "subject", "body"],
-  save_email_config: ["smtp_host", "smtp_port", "sender_email", "smtp_password"],
-  add_whatsapp_contact: ["name", "number"],
-  discord_kick: ["user_id", "reason"],
-  discord_ban: ["user_id", "reason", "delete_message_seconds"],
-  discord_unban: ["user_id"],
-  discord_mute: ["user_id", "duration_mins", "reason"],
-  discord_unmute: ["user_id"],
-  discord_warn: ["user_id", "reason"],
-  discord_delete_messages: ["channel_id", "count"],
-  discord_assign_role: ["user_id", "role_id"],
-  discord_remove_role: ["user_id", "role_id"],
-  discord_send_dm: ["user_id", "message"],
-  discord_get_guilds: [],
-  get_status: [],
-  set_discord_behaviour_channel: ["channel_id"],
-  get_user_behaviour: ["user_id"],
-  send_to_cli_agent: ["agent_name", "prompt", "project_name"],
-  get_cli_agents_status: [],
-  restart_system: [],
-  shutdown_system: [],
-};
-
 function hasUnquotedEquals(s: string): boolean {
   let inQuotes = false;
-  let quoteChar = ' ';
+  let quoteChar = " ";
   let escaped = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (escaped) {
       escaped = false;
-    } else if (c === '\\' && inQuotes) {
+    } else if (c === "\\" && inQuotes) {
       escaped = true;
     } else if ((c === '"' || c === "'") && (!inQuotes || c === quoteChar)) {
       inQuotes = !inQuotes;
-      quoteChar = inQuotes ? c : ' ';
-    } else if (!inQuotes && c === '=') {
+      quoteChar = inQuotes ? c : " ";
+    } else if (!inQuotes && c === "=") {
       return true;
     }
   }
@@ -322,7 +104,10 @@ function hasUnquotedEquals(s: string): boolean {
  * Parse plan-format response (lines starting with "- tool(args)") into typed tool calls.
  * Mirrors src-tauri/src/tools.rs parse_plan_to_tool_calls
  */
-export function parsePlanToToolCalls(planText: string, guildId: string): ToolCall[] {
+export function parsePlanToToolCalls(
+  planText: string,
+  guildId: string,
+): ToolCall[] {
   let contentToParse = planText;
 
   // Try <plan> tags first
@@ -340,12 +125,18 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
   }
 
   const toolCalls: ToolCall[] = [];
-  if (contentToParse.includes("conversational") && !contentToParse.includes("(")) {
+  if (
+    contentToParse.includes("conversational") &&
+    !contentToParse.includes("(")
+  ) {
     return [];
   }
 
   // Preprocess single-line multi-tool calls into multiple lines
-  contentToParse = contentToParse.replace(/\)\s*(?:,\s*|;\s*|and\s+)?-?\s*([a-zA-Z_]\w*)\(/g, ")\n- $1(");
+  contentToParse = contentToParse.replace(
+    /\)\s*(?:,\s*|;\s*|and\s+)?-?\s*([a-zA-Z_]\w*)\(/g,
+    ")\n- $1(",
+  );
 
   const lines = contentToParse.split("\n");
   for (const line of lines) {
@@ -357,15 +148,21 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
     if (tool === "conversational") continue;
 
     // Detect multiplier at the end of the line (e.g. (x3) or (×2))
-    const multMatch = trimmed.match(/\((?:[x×\*\s]*|times\s*|repeat\s*)(\d+)\s*\)\s*$/i);
+    const multMatch = trimmed.match(
+      /\((?:[x×\*\s]*|times\s*|repeat\s*)(\d+)\s*\)\s*$/i,
+    );
     const count = multMatch ? parseInt(multMatch[1], 10) : 1;
 
-    const argsText = match[2].replace(/\s*\((?:[x×\*\s]*|times\s*|repeat\s*)\d+\s*\)\s*$/i, "");
+    const argsText = match[2].replace(
+      /\s*\((?:[x×\*\s]*|times\s*|repeat\s*)\d+\s*\)\s*$/i,
+      "",
+    );
     const args: Record<string, unknown> = {};
 
     if (hasUnquotedEquals(argsText)) {
       // Parse "key = value" pairs
-      const argRegex = /(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|\d+)/g;
+      const argRegex =
+        /(\w+)\s*=\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|\d+)/g;
       let argMatch;
       while ((argMatch = argRegex.exec(argsText)) !== null) {
         const key = argMatch[1];
@@ -387,7 +184,8 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
       }
     } else {
       // Positional fallback
-      const valueRegex = /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|[+-]?\d+(?:\.\d+)?|[a-zA-Z_]\w*/g;
+      const valueRegex =
+        /"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|true|false|True|False|null|None|none|[+-]?\d+(?:\.\d+)?|[a-zA-Z_]\w*/g;
       let valMatch;
       const posValues: unknown[] = [];
       while ((valMatch = valueRegex.exec(argsText)) !== null) {
@@ -403,7 +201,7 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
         posValues.push(val);
       }
 
-      const paramNames = TOOL_PARAMS[tool] || [];
+      const paramNames = (TOOL_PARAMS as Record<string, readonly string[]>)[tool] || [];
       for (let i = 0; i < posValues.length && i < paramNames.length; i++) {
         let val = posValues[i];
         const key = paramNames[i];
@@ -415,7 +213,7 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
     }
 
     // Auto-inject guild_id for Discord tools that need it
-    if (DISCORD_TOOLS_WITH_GUILD_ID.includes(tool)) {
+    if ((DISCORD_TOOLS_WITH_GUILD_ID as readonly string[]).includes(tool)) {
       args.guild_id = guildId;
     }
 
@@ -451,102 +249,73 @@ export function parsePlanToToolCalls(planText: string, guildId: string): ToolCal
  * Build the shared action system prompt used by all platforms.
  * Mirrors src-tauri/src/tools.rs build_action_system_prompt
  */
-export function buildActionSystemPrompt(memoryContext: string, categories?: string[]): string {
+export function buildActionSystemPrompt(
+  memoryContext: string,
+  categories?: string[],
+): string {
   const cats = categories || [];
   const has = (c: string) => cats.includes(c);
-  const isMessaging = has("whatsapp") || has("discord") || has("email");
 
   const rules: string[] = [];
-  rules.push(`You are Pern's AI Agent. Your job is to translate user requests directly into a list of tool actions starting with "- ".`);
-  rules.push(`If the request is conversational (e.g. greetings, questions with no tool mapping), output exactly: Plan:\n- conversational()`);
+  
+  // Header rules (first two rules)
+  const headerRules = RULES.slice(0, 2);
+  for (const rule of headerRules) {
+    rules.push(rule.text);
+  }
+  
   rules.push("");
-  rules.push(`IMPORTANT RULES:`);
+  rules.push("IMPORTANT RULES:");
 
-  // Rule 1: Always
-  rules.push(`1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.`);
-  // Rule 2: Always
-  rules.push(`2. Resolve pronouns (it, them) to their original referents. Always output actions in the exact chronological order requested.`);
-
-  // Rule 3: Discord only
-  if (has("discord")) {
-    rules.push(`3. Do not output guild_id; it's auto-injected.`);
-  }
-
-  // Rule 4: Messaging rules (WhatsApp/Discord/Email)
-  if (isMessaging) {
-    rules.push(`4. MESSAGE FORMATTING:`);
-    if (has("whatsapp") || has("discord")) {
-      rules.push(`   a. "saying [text]" or "say [text]" -> use that exact text as message. This overrides any prefix rule.`);
-      rules.push(`   b. Convert indirect requests ("ask if he is available") to direct speech: "Hey [name], are you available?"`);
-    }
-    if (has("whatsapp")) {
-      rules.push(`   c. "message Bob to open discord" = send_whatsapp_message("Bob", "open discord"), NOT launch_app. Do not execute actions inside a message.`);
-    }
-    if (has("discord")) {
-      rules.push(`   d. "dm <@123> asking..." -> discord_send_dm(user_id, "Hey, can you..."). Prefix DMs for mentions with "Hey, ".`);
-    }
-    if (has("whatsapp") || has("discord")) {
-      rules.push(`   e. For named contacts, ALWAYS prefix messages with "Hey [name], " unless rule 4a applies. For <@mentions>, use "Hey, " instead.`);
-      rules.push(`   g. Preserve the exact spelling and casing of all names as written in the request.`);
-    }
-    if (has("email")) {
-      rules.push(`   f. Preserve the exact spelling and casing of all names and recipients as written in the request.`);
+  // Remaining rules
+  const remainingRules = RULES.slice(2);
+  for (const rule of remainingRules) {
+    const isApplicable = rule.categories.length === 0 || rule.categories.some((cat) => cats.includes(cat));
+    if (isApplicable) {
+      rules.push(rule.text);
     }
   }
-
-  // Rule 5: WhatsApp only
-  if (has("whatsapp")) {
-    rules.push(`5. AUTO-REPLY: "turn auto reply on/off" = set_whatsapp_auto_reply(recipient, enabled). Only use toggle_whatsapp_auto_reply when "toggle" is explicitly used.`);
-  }
-
-  // Rule 6: Discord only
-  if (has("discord")) {
-    rules.push(`6. BAN VS DELETE: discord_ban's delete_message_seconds is ONLY for deleting the banned user's history. Channel message purging MUST use discord_delete_messages.`);
-  }
-
-  // Rule 7: Always
-  rules.push(`7. NO CODE: NEVER output code blocks, if/else, loops, variables, or comments. Output ONLY a flat list of tool calls starting with "- ".`);
-  // Rule 8: Always
-  rules.push(`8. NO HALLUCINATED TOOLS: Only use the allowed tools listed below.`);
-
-  // Rule 9: Discord only
-  if (has("discord")) {
-    rules.push(`9. REASON PROPAGATION: If a reason is given for the first action in a chain (e.g. "warn for spamming, then mute"), propagate it to subsequent relevant actions.`);
-  }
-
-  // Rule 10: WhatsApp + Discord
-  if (has("whatsapp") && has("discord")) {
-    rules.push(`10. DISCORD VS WHATSAPP: Channel/role/ban/mute/unban/<@mentions> map to Discord tools. Do NOT use send_whatsapp_message for Discord.`);
-  }
-
-  // Rule 11: Always
-  rules.push(`11. For 3+ actions, output a "Todo:" section before "Plan:". For simple requests, omit Todo.`);
-
-  // Rule 12: Always
-  rules.push(`12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.`);
 
   if (has("todos")) {
     const now = new Date();
     const formatLocalISO = (d: Date) => {
-      const pad = (num: number) => num.toString().padStart(2, '0');
+      const pad = (num: number) => num.toString().padStart(2, "0");
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     };
     const localNow = formatLocalISO(now);
-    const localPlus2 = formatLocalISO(new Date(now.getTime() + 2 * 60 * 60 * 1000));
-    const localPlus1 = formatLocalISO(new Date(now.getTime() + 1 * 60 * 60 * 1000));
+    const localPlus2 = formatLocalISO(
+      new Date(now.getTime() + 2 * 60 * 60 * 1000),
+    );
+    const localPlus1 = formatLocalISO(
+      new Date(now.getTime() + 1 * 60 * 60 * 1000),
+    );
     const tomorrow9 = new Date();
     tomorrow9.setDate(tomorrow9.getDate() + 1);
     tomorrow9.setHours(9, 0, 0, 0);
     const localTomorrow9 = formatLocalISO(tomorrow9);
 
     rules.push(`13. TODO TIME AND REPEAT RULES:`);
-    rules.push(`    - When resolving relative times like "in next 2 hrs", "in 30 mins", calculate the target local time by adding that duration to the current local time.`);
-    rules.push(`    - Remove relative time expressions (e.g., "in next 2 hrs", "tomorrow at 9am", "in 30 mins") from the todo text, keeping only the clean task description.`);
-    rules.push(`    - NEVER set repeat_hours for relative offsets like "in next X hrs" or "in Y mins". repeat_hours must ONLY be set when the user explicitly requests a repeating interval, such as "every 2 hours" or "daily".`);
-    rules.push(`    - Output the time in local ISO format WITHOUT timezone suffix/offset (do NOT append 'Z' or '+05:30'). For example, given the current local time is "${localNow}":`);
-    rules.push(`      * "add a todo for drinking water in next 2 hrs" -> add_todo(text="drinking water", time="${localPlus2}", repeat_hours=null)`);
-    rules.push(`      * "remind me to check emails in 1 hour" -> add_todo(text="check emails", time="${localPlus1}", repeat_hours=null)`);
-    rules.push(`      * "add a repeating todo to walk the dog every 24 hours starting tomorrow at 9 AM" -> add_todo(text="walk the dog", time="${localTomorrow9}", repeat_hours=24)`);
+    rules.push(
+      `    - When resolving relative times like "in next 2 hrs", "in 30 mins", calculate the target local time by adding that duration to the current local time.`,
+    );
+    rules.push(
+      `    - Remove relative time expressions (e.g., "in next 2 hrs", "tomorrow at 9am", "in 30 mins") from the todo text, keeping only the clean task description.`,
+    );
+    rules.push(
+      `    - NEVER set repeat_hours for relative offsets like "in next X hrs" or "in Y mins". repeat_hours must ONLY be set when the user explicitly requests a repeating interval, such as "every 2 hours" or "daily".`,
+    );
+    rules.push(
+      `    - Output the time in local ISO format WITHOUT timezone suffix/offset (do NOT append 'Z' or '+05:30'). For example, given the current local time is "${localNow}":`,
+    );
+    rules.push(
+      `      * "add a todo for drinking water in next 2 hrs" -> add_todo(text="drinking water", time="${localPlus2}", repeat_hours=null)`,
+    );
+    rules.push(
+      `      * "remind me to check emails in 1 hour" -> add_todo(text="check emails", time="${localPlus1}", repeat_hours=null)`,
+    );
+    rules.push(
+      `      * "add a repeating todo to walk the dog every 24 hours starting tomorrow at 9 AM" -> add_todo(text="walk the dog", time="${localTomorrow9}", repeat_hours=24)`,
+    );
   }
 
   return [
@@ -560,7 +329,9 @@ export function buildActionSystemPrompt(memoryContext: string, categories?: stri
 
 /** Check if a tool name is a valid canonical tool name */
 export function isToolName(value: unknown): value is ToolName {
-  return typeof value === "string" && ALL_TOOL_NAMES.includes(value as ToolName);
+  return (
+    typeof value === "string" && ALL_TOOL_NAMES.includes(value as ToolName)
+  );
 }
 
 /** Normalize a tool call object, handling known variations */
@@ -597,9 +368,17 @@ export function normalizeToolCall(value: unknown): ToolCall | null {
     }
     if (typeof args.agent_name === "string") {
       const lower = (args.agent_name as string).toLowerCase().trim();
-      if (lower === "agy" || lower === "agye" || lower === "antigravity") args.agent_name = "agy";
-      else if (lower === "claude" || lower === "claude-code" || lower === "claude_code" || lower === "claudecode") args.agent_name = "claude-code";
-      else if (lower === "freebuff" || lower === "freebuf") args.agent_name = "freebuff";
+      if (lower === "agy" || lower === "agye" || lower === "antigravity")
+        args.agent_name = "agy";
+      else if (
+        lower === "claude" ||
+        lower === "claude-code" ||
+        lower === "claude_code" ||
+        lower === "claudecode"
+      )
+        args.agent_name = "claude-code";
+      else if (lower === "freebuff" || lower === "freebuf")
+        args.agent_name = "freebuff";
     }
   }
 
@@ -609,7 +388,9 @@ export function normalizeToolCall(value: unknown): ToolCall | null {
       const lower = args.status.toLowerCase().trim();
       if (["online", "active", "run", "running"].includes(lower)) {
         args.status = "online";
-      } else if (["dnd", "busy", "do not disturb", "do_not_disturb"].includes(lower)) {
+      } else if (
+        ["dnd", "busy", "do not disturb", "do_not_disturb"].includes(lower)
+      ) {
         args.status = "dnd";
       } else if (["offline", "invisible", "hidden"].includes(lower)) {
         args.status = "invisible";
@@ -623,7 +404,10 @@ export function normalizeToolCall(value: unknown): ToolCall | null {
 }
 
 /** Format a test case to few-shot string for the model */
-export function formatTestCaseToFewShot(tc: { input: string; expected: ToolCall[] }): string {
+export function formatTestCaseToFewShot(tc: {
+  input: string;
+  expected: ToolCall[];
+}): string {
   let output = `User Request: ${tc.input}\nPlan:\n`;
   if (tc.expected.length === 0) {
     output += "- conversational()\n";
@@ -643,153 +427,21 @@ export function formatTestCaseToFewShot(tc: { input: string; expected: ToolCall[
   return output;
 }
 
-interface FewShotExample {
-  categories: string[];
-  text: string;
-}
-
-const FEW_SHOT_EXAMPLES: FewShotExample[] = [
-  {
-    categories: [],
-    text: `User Request: what is the capital of France?
-Plan:
-- conversational()`,
-  },
-  {
-    categories: ["system"],
-    text: `User Request: open whatsapp and close notepad
-Plan:
-- launch_app(app_name="whatsapp")
-- close_app(app_name="notepad")`,
-  },
-  {
-    categories: ["system"],
-    text: `User Request: shut down my computer
-Plan:
-- shutdown_system()`,
-  },
-  {
-    categories: ["system"],
-    text: `User Request: restart the system
-Plan:
-- restart_system()`,
-  },
-  {
-    categories: ["whatsapp"],
-    text: `User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them
-Plan:
-- send_whatsapp_message(recipient="Dave", message="Hey Dave, are you free?")
-- send_whatsapp_message(recipient="Frank", message="Hey Frank, are you free?")
-- launch_app(app_name="whatsapp")
-- set_whatsapp_auto_reply(recipient="Dave", enabled=true)
-- set_whatsapp_auto_reply(recipient="Frank", enabled=true)`,
-  },
-  {
-    categories: ["discord"],
-    text: `User Request: warn <@456> for toxicity, then mute them for 10 minutes, then assign role 888 to them, then log this in channel logs saying warned and muted user 456
-Plan:
-- discord_warn(user_id="456", reason="toxicity")
-- discord_mute(user_id="456", duration_mins=10, reason="toxicity")
-- discord_assign_role(user_id="456", role_id="888")
-- discord_send_channel_message(channel_name="logs", message="warned and muted user 456")`,
-  },
-  {
-    categories: ["discord"],
-    text: `User Request: dm <@123> asking if they can review the change
-Plan:
-- discord_send_dm(user_id="123", message="Hey, can you review the change?")`,
-  },
-  {
-    categories: ["discord"],
-    text: `User Request: send a message to general channel saying hello everyone
-Plan:
-- discord_send_channel_message(channel_name="general", message="hello everyone")`,
-  },
-  {
-    categories: ["email", "discord"],
-    text: `User Request: save email config with host smtp.gmail.com port 587 sender me@gmail.com and password pass123, then send email to alice@gmail.com with subject Report and say hello, then dm <@456> asking if they can check it
-Plan:
-- save_email_config(smtp_host="smtp.gmail.com", smtp_port=587, sender_email="me@gmail.com", smtp_password="pass123")
-- send_email(to="alice@gmail.com", subject="Report", body="hello")
-- discord_send_dm(user_id="456", message="Hey, can you check it?")`,
-  },
-  {
-    categories: ["agents", "whatsapp"],
-    text: `User Request: run agy on project Pern to build it, then run freebuff to run tests, and if both are done message Bob saying all good, and toggle auto reply for him
-Plan:
-- send_to_cli_agent(agent_name="agy", prompt="build it", project_name="Pern")
-- send_to_cli_agent(agent_name="freebuff", prompt="run tests", project_name="Pern")
-- send_whatsapp_message(recipient="Bob", message="all good")
-- toggle_whatsapp_auto_reply(recipient="Bob")`,
-  },
-  {
-    categories: ["system", "discord"],
-    text: `User Request: open chrome and calculator, do some math, then close both chrome and calculator, get status of cli agents, and set my discord status to idle with activity away
-Plan:
-- launch_app(app_name="chrome")
-- launch_app(app_name="calculator")
-- close_app(app_name="chrome")
-- close_app(app_name="calculator")
-- get_cli_agents_status()
-- set_discord_status(status="idle", activity="away")`,
-  },
-  {
-    categories: ["whatsapp"],
-    text: `User Request: add contact Alice with number +9876543, then message Alice saying hello, then do that message again, then message Dave on WhatsApp saying hi Alice joined, then do the Dave message twice more
-Plan:
-- add_whatsapp_contact(name="Alice", number="+9876543")
-- send_whatsapp_message(recipient="Alice", message="hello")
-- send_whatsapp_message(recipient="Alice", message="hello")
-- send_whatsapp_message(recipient="Dave", message="hi Alice joined")
-- send_whatsapp_message(recipient="Dave", message="hi Alice joined")
-- send_whatsapp_message(recipient="Dave", message="hi Alice joined")`,
-  },
-  {
-    categories: ["discord"],
-    text: `User Request: ban <@789> for raiding, delete 30 messages in channel 888888, then set behaviour log channel to 888888, then get behaviour logs for <@789> to verify
-Plan:
-- discord_ban(user_id="789", reason="raiding", delete_message_seconds=0)
-- discord_delete_messages(channel_id="888888", count=30)
-- set_discord_behaviour_channel(channel_id="888888")
-- get_user_behaviour(user_id="789")`,
-  },
-  {
-    categories: ["whatsapp", "email"],
-    text: `User Request: send a whatsapp message to Alice asking if she can check the report, then email her at alice@gmail.com with subject Report Review and body please check the report, then do that email again, then tell her on whatsapp that it is sent
-Plan:
-- send_whatsapp_message(recipient="Alice", message="Hey Alice, can you check the report?")
-- send_email(to="alice@gmail.com", subject="Report Review", body="please check the report")
-- send_email(to="alice@gmail.com", subject="Report Review", body="please check the report")
-- send_whatsapp_message(recipient="Alice", message="it is sent")`,
-  },
-  {
-    categories: ["whatsapp", "discord"],
-    text: `User Request: turn global whatsapp auto reply off, then unban <@111> on discord
-Plan:
-- toggle_whatsapp(enabled=false)
-- discord_unban(user_id="111")`,
-  },
-  {
-    categories: ["whatsapp"],
-    text: `User Request: message Charlie on WhatsApp asking how he is, and toggle auto reply for him
-Plan:
-- send_whatsapp_message(recipient="Charlie", message="Hey Charlie, how are you?")
-- toggle_whatsapp_auto_reply(recipient="Charlie")`,
-  },
-];
-
-const MAX_FEW_SHOTS = 4;
-
+/** Get the unified action few-shot examples as a string. */
 export function getActionFewShots(categories?: string[]): string {
-  let examples: FewShotExample[];
+  let examples: typeof FEW_SHOTS[number][];
   if (!categories || categories.length === 0) {
-    examples = FEW_SHOT_EXAMPLES;
+    examples = FEW_SHOTS as unknown as typeof FEW_SHOTS[number][];
   } else {
-    examples = FEW_SHOT_EXAMPLES.filter(
-      (e) => e.categories.length === 0 || e.categories.some((cat) => categories.includes(cat))
-    );
+    examples = FEW_SHOTS.filter(
+      (e) =>
+        e.categories.length === 0 ||
+        e.categories.some((cat) => categories.includes(cat)),
+    ) as unknown as typeof FEW_SHOTS[number][];
   }
   // Limit few-shots to avoid exceeding small model context windows (e.g. 4096 tokens)
-  return examples.slice(0, MAX_FEW_SHOTS).map((e) => e.text).join("\n\n");
+  return examples
+    .slice(0, 4)
+    .map((e) => e.text)
+    .join("\n\n");
 }
-

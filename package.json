@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "codegen": "node scripts/sync-tools.js",
+    "dev": "npm run codegen && vite",
+    "build": "npm run codegen && tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "android:build": "tauri android build --target aarch64"

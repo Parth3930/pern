@@ -11,6 +11,7 @@ pub mod skills;
 pub mod state;
 pub mod storage;
 pub mod tools;
+pub mod tools_data;
 
 use chat::{ChatMessage, ChatRequest, OpenAIStreamChunk};
 use futures_util::StreamExt;
