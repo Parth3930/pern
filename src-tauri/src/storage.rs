@@ -18,6 +18,7 @@ pub struct RecentChat {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(default)]
 pub struct AppConfig {
+    pub config_version: u32,
     pub model_dir: String,
     pub selected_model: String,
     pub provider: String,
@@ -63,6 +64,7 @@ impl Default for AppConfig {
         let _ = fs::create_dir_all(&model_dir);
 
         Self {
+            config_version: CURRENT_CONFIG_VERSION,
             model_dir: model_dir.to_string_lossy().to_string(),
             selected_model: "qwen-1.5-1.8b-chat-q4".to_string(),
             provider: "llama.cpp".to_string(),
@@ -89,7 +91,7 @@ impl Default for AppConfig {
             projects: vec![
                 crate::storage::ProjectConfig {
                     name: "Pern".to_string(),
-                    path: "D:\\agent\\pern".to_string(),
+                    path: "D:\\\\agent\\\\pern".to_string(),
                 },
             ],
             llama_gpu_layers: 999,
@@ -97,6 +99,56 @@ impl Default for AppConfig {
             llama_flash_attn: "auto".to_string(),
         }
     }
+}
+
+pub const CURRENT_CONFIG_VERSION: u32 = 2;
+
+fn migrate_config_v1_to_v2(config: &mut AppConfig) -> bool {
+    let mut dirty = false;
+
+    // Migration v1 -> v2: legacy Ollama provider or old model ID format
+    let is_legacy_model = config.selected_model.contains(':') || config.selected_model == "gemma3:1b";
+    let is_legacy_provider = config.provider.to_lowercase() == "ollama" || config.provider.is_empty();
+
+    if is_legacy_provider || is_legacy_model {
+        println!(
+            "[CONFIG] Migration v1->v2: Legacy config detected (Provider: {}, Model: {}). Migrating...",
+            config.provider, config.selected_model
+        );
+        let default = AppConfig::default();
+        config.provider = default.provider;
+        config.selected_model = default.selected_model;
+        config.first_run_completed = false;
+        dirty = true;
+    }
+
+    // Migration v1 -> v2: on Android, reset model_dir and llama_server_path if they point
+    // to a read-only system path (e.g. /data/local/... from old dirs::data_local_dir)
+    #[cfg(target_os = "android")]
+    {
+        let correct_base = get_app_dir();
+        let correct_model_dir = correct_base.join("models").to_string_lossy().to_string();
+        let is_bad_path = |p: &str| -> bool {
+            p.starts_with("/data/local")
+                || p.starts_with("/storage")
+                || p.is_empty()
+                || (p.starts_with("/data/") && !p.contains("libllama_server.so"))
+        };
+        if is_bad_path(&config.model_dir) {
+            println!("[CONFIG] Android: resetting bad model_dir: {}", config.model_dir);
+            config.model_dir = correct_model_dir;
+            let _ = fs::create_dir_all(&config.model_dir);
+            dirty = true;
+        }
+        // Also reset llama_server_path if it's on a bad path so the install flow re-runs
+        if is_bad_path(&config.llama_server_path) {
+            println!("[CONFIG] Android: resetting bad llama_server_path");
+            config.llama_server_path = String::new();
+            dirty = true;
+        }
+    }
+
+    dirty
 }
 
 pub fn get_app_dir() -> PathBuf {
@@ -125,7 +177,6 @@ pub fn get_config_path() -> PathBuf {
     path.push("config.json");
     path
 }
-
 pub fn load_config() -> AppConfig {
     let path = get_config_path();
     if path.exists() {
@@ -134,48 +185,14 @@ pub fn load_config() -> AppConfig {
                 Ok(mut config) => {
                     let mut dirty = false;
 
-                    // Migration: legacy Ollama provider or old model ID format
-                    let is_legacy_model =
-                        config.selected_model.contains(':') || config.selected_model == "gemma3:1b";
-                    let is_legacy_provider =
-                        config.provider.to_lowercase() == "ollama" || config.provider.is_empty();
-
-                    if is_legacy_provider || is_legacy_model {
-                        println!(
-                            "[CONFIG] Legacy config detected (Provider: {}, Model: {}). Migrating...",
-                            config.provider, config.selected_model
-                        );
-                        let default = AppConfig::default();
-                        config.provider = default.provider;
-                        config.selected_model = default.selected_model;
-                        config.first_run_completed = false;
+                    // Run versioned migrations
+                    if config.config_version < 1 {
+                        config.config_version = 1;
                         dirty = true;
                     }
-
-                    // Migration: on Android, reset model_dir and llama_server_path if they point
-                    // to a read-only system path (e.g. /data/local/... from old dirs::data_local_dir)
-                    #[cfg(target_os = "android")]
-                    {
-                        let correct_base = get_app_dir();
-                        let correct_model_dir = correct_base.join("models").to_string_lossy().to_string();
-                        let is_bad_path = |p: &str| -> bool {
-                            p.starts_with("/data/local")
-                                || p.starts_with("/storage")
-                                || p.is_empty()
-                                || (p.starts_with("/data/") && !p.contains("libllama_server.so"))
-                        };
-                        if is_bad_path(&config.model_dir) {
-                            println!("[CONFIG] Android: resetting bad model_dir: {}", config.model_dir);
-                            config.model_dir = correct_model_dir;
-                            let _ = fs::create_dir_all(&config.model_dir);
-                            dirty = true;
-                        }
-                        // Also reset llama_server_path if it's on a bad path so the install flow re-runs
-                        if is_bad_path(&config.llama_server_path) {
-                            println!("[CONFIG] Android: resetting bad llama_server_path");
-                            config.llama_server_path = String::new();
-                            dirty = true;
-                        }
+                    if config.config_version < 2 {
+                        dirty |= migrate_config_v1_to_v2(&mut config);
+                        config.config_version = 2;
                     }
 
                     // Clear conversation summary on startup/load to ensure per-chat history

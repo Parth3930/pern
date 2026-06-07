@@ -39,6 +39,7 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 dirs = "5.0"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "2.0"
 futures-util = "0.3"
 tokio-tungstenite = { version = "0.21", features = ["rustls-tls-webpki-roots"] }
 image = "0.25"
@@ -57,3 +58,7 @@ libsqlite3-sys = { version = "0.35", features = ["bundled"] }
 zip = "2"
 flate2 = "1"
 tar = "0.4"
+sha2 = "0.10"
+tracing = { version = "0.1", features = ["std"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "json", "env-filter"] }
+tracing-appender = "0.2"

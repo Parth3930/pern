@@ -200,18 +200,8 @@ async fn run_gateway_loop(
         "message": format!("[DISCORD] Hello received. Heartbeat interval: {}ms", heartbeat_interval)
     }));
 
-    let (heartbeat_tx, mut heartbeat_rx) = tokio::sync::mpsc::channel::<()>(1);
-    let heartbeat_task = tauri::async_runtime::spawn(async move {
-        let mut interval =
-            tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
-        interval.tick().await;
-        loop {
-            interval.tick().await;
-            if heartbeat_tx.send(()).await.is_err() {
-                break;
-            }
-        }
-    });
+    let mut heartbeat_interval_timer = tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
+    heartbeat_interval_timer.tick().await; // First tick immediate
 
     let presence_json = if activity_text.is_empty() {
         serde_json::json!({
@@ -261,7 +251,7 @@ async fn run_gateway_loop(
 
     loop {
         tokio::select! {
-            _ = heartbeat_rx.recv() => {
+            _ = heartbeat_interval_timer.tick() => {
                 let seq = *last_seq_clone.lock().await;
                 let hb = serde_json::json!({
                     "op": 1,
@@ -323,7 +313,6 @@ async fn run_gateway_loop(
         }
     }
 
-    heartbeat_task.abort();
     Ok(())
 }
 

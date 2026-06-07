@@ -522,6 +522,10 @@ const FEW_SHOT_EXAMPLES: &[FewShotExample] = &[
         categories: &["whatsapp"],
         text: "User Request: message Charlie on WhatsApp asking how he is, and toggle auto reply for him\nPlan:\n- send_whatsapp_message(recipient=\"Charlie\", message=\"Hey Charlie, how are you?\")\n- toggle_whatsapp_auto_reply(recipient=\"Charlie\")",
     },
+    FewShotExample {
+        categories: &["whatsapp"],
+        text: "[Owner context: Recent WhatsApp details: ### LAST WHATSAPP\nRecipient(s): Rahul\nMessage: this is a test]\n\nUser Request: send the same message to Parth\nPlan:\n- send_whatsapp_message(recipient=\"Parth\", message=\"this is a test\")",
+    },
 ];
 
 pub fn detect_required_tool_categories(user_message: &str) -> Vec<String> {
