@@ -172,6 +172,7 @@ jobs:
           
           files=(release-files/*)
           if [ -e "${files[0]}" ]; then
+            gh release delete "$TAG_NAME" --cleanup-tag --yes || true
             gh release create "$TAG_NAME" release-files/* \
               --title "Release $TAG_NAME" \
               --notes "Automated build and release from commit ${{ github.sha }} containing 'prod' in the message."
