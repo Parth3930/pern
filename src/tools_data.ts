@@ -293,7 +293,19 @@ export const FEW_SHOTS = [
   },
   {
     categories: ["system"],
+    text: "User Request: open chrome and notepad\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- launch_app(app_name=\"notepad\")"
+  },
+  {
+    categories: ["system"],
+    text: "User Request: open both\\nPlan:\\n- conversational()"
+  },
+  {
+    categories: ["system"],
     text: "User Request: open whatsapp and close notepad\\nPlan:\\n- launch_app(app_name=\"whatsapp\")\\n- close_app(app_name=\"notepad\")"
+  },
+  {
+    categories: ["system"],
+    text: "User Request: close chrome and notepad\\nPlan:\\n- close_app(app_name=\"chrome\")\\n- close_app(app_name=\"notepad\")"
   },
   {
     categories: ["system"],
@@ -329,7 +341,7 @@ export const FEW_SHOTS = [
   },
   {
     categories: ["system", "discord"],
-    text: "User Request: open chrome and calculator, do some math, then close both chrome and calculator, get status of cli agents, and set my discord status to idle with activity away\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- launch_app(app_name=\"calculator\")\\n- close_app(app_name=\"chrome\")\\n- close_app(app_name=\"calculator\")\\n- get_cli_agents_status()\\n- set_discord_status(status=\"idle\", activity=\"away\")"
+    text: "User Request: open chrome, check status of cli agents, and set my discord status to idle with activity away\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- get_cli_agents_status()\\n- set_discord_status(status=\"idle\", activity=\"away\")"
   },
   {
     categories: ["whatsapp"],
@@ -350,6 +362,14 @@ export const FEW_SHOTS = [
   {
     categories: ["whatsapp"],
     text: "User Request: message Charlie on WhatsApp asking how he is, and toggle auto reply for him\\nPlan:\\n- send_whatsapp_message(recipient=\"Charlie\", message=\"Hey Charlie, how are you?\")\\n- toggle_whatsapp_auto_reply(recipient=\"Charlie\")"
+  },
+  {
+    categories: ["whatsapp"],
+    text: "User Request: message Alice\\nPlan:\\n- conversational()"
+  },
+  {
+    categories: ["whatsapp"],
+    text: "User Request: send the same message to Parth\\nPlan:\\n- conversational()"
   },
   {
     categories: ["whatsapp"],
@@ -447,12 +467,16 @@ export const RULES = [
     categories: []
   },
   {
-    text: "12. STRICT ACTION MATCHING: DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.",
+    text: "12. STRICT ACTION MATCHING: Only generate tools that correspond directly to actions explicitly requested by the user. DO NOT launch/open any app unless the user explicitly requests to open, launch, start, run, or show it. DO NOT close/exit any app unless the user explicitly requests to close, quit, exit, or terminate it. NEVER close an app immediately after launching it unless specifically instructed.",
     categories: []
   },
   {
     text: "13. BANTER & FUN: When responding to a conversational request for a joke, pickup line, or friendly/flirtatious banter, be highly cooperative, warm, and humorous. Provide a fun and lighthearted response instead of declining or being overly formal.",
     categories: ["banter"]
+  },
+  {
+    text: "14. AMBIGUOUS OR MISSING CONTEXT: If a request is ambiguous or missing required parameters (e.g., \"message Bob\" without a message body, or \"send the same message\" when there is no previous message in context, or \"open both\" when no apps have been launched), DO NOT guess, assume, or hallucinate parameters from the few-shot examples. Instead, map it to: Plan:\\n- conversational() so that the assistant can ask the user for clarification.",
+    categories: []
   }
 ] as const;
 

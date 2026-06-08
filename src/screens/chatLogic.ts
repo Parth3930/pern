@@ -309,7 +309,7 @@ function detectRequiredToolCategories(
   const hasWhatsAppTermsOtherThanApp = /\b(message|msg|text|contact|auto[- ]?reply|auto[- ]?replies)\b/i.test(normalized) ||
                                        /\b(tell|ask|say|send|msg|message|text)\b.{0,30}\b(him|her|them|mom|dad|brother|sister|friend|parth|samarth|rahul|chirag|rover)\b/i.test(normalized) ||
                                        (whatsappContacts && whatsappContacts.some(c => normalized.includes(c.name.toLowerCase())));
-  const onlyWhatsAppAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,10}\bwhatsapp\b/i.test(normalized) && !hasWhatsAppTermsOtherThanApp;
+  const onlyWhatsAppAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,50}\bwhatsapp\b/i.test(normalized) && !hasWhatsAppTermsOtherThanApp;
   const isWhatsApp = (/\b(whatsapp|message|msg|text|contact|auto[- ]?reply|auto[- ]?replies)\b/i.test(normalized) ||
                       /\b(tell|ask|say|send|msg|message|text)\b.{0,30}\b(him|her|them|mom|dad|brother|sister|friend|parth|samarth|rahul|chirag|rover)\b/i.test(normalized) ||
                       (whatsappContacts && whatsappContacts.some(c => normalized.includes(c.name.toLowerCase())))) && !onlyWhatsAppAsApp;
@@ -320,7 +320,7 @@ function detectRequiredToolCategories(
   // 2. Discord Matcher
   const hasDiscordTermsOtherThanApp = /\b(guild|channel|server|role|kick|ban|unban|mute|unmute|warn|purge|dm|logs|behaviour|behave)\b/i.test(normalized) ||
                                       /<@!?\d+>/.test(normalized);
-  const onlyDiscordAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,10}\bdiscord\b/i.test(normalized) && !hasDiscordTermsOtherThanApp;
+  const onlyDiscordAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,50}\bdiscord\b/i.test(normalized) && !hasDiscordTermsOtherThanApp;
   const isDiscord = (/\b(discord|guild|channel|server|role|kick|ban|unban|mute|unmute|warn|purge|dm|logs|behaviour|behave)\b/i.test(normalized) ||
                      /<@!?\d+>/.test(normalized)) && !onlyDiscordAsApp;
   if (isDiscord) {
@@ -329,7 +329,7 @@ function detectRequiredToolCategories(
 
   // 3. Email Matcher
   const hasEmailTermsOtherThanApp = /\b(send|write|draft|smtp|subject|body)\b/i.test(normalized) || /\S+@\S+/.test(normalized);
-  const onlyEmailAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,10}\b(gmail|mail|email)\b/i.test(normalized) && !hasEmailTermsOtherThanApp;
+  const onlyEmailAsApp = /\b(open|launch|start|run|close|quit|exit)\b.{0,50}\b(gmail|mail|email)\b/i.test(normalized) && !hasEmailTermsOtherThanApp;
   const isEmail = (/\b(email|mail|smtp|subject|body)\b/i.test(normalized) ||
                    /\S+@\S+/.test(normalized)) && !onlyEmailAsApp;
   if (isEmail) {
@@ -412,6 +412,82 @@ function getTodosContext(categories: string[]): string | null {
   }
 }
 
+function resolveAppPronouns(userMessage: string, messages: ChatMessage[]): string {
+  const normalized = userMessage.toLowerCase();
+  
+  const isClose = /\b(close|quit|exit|stop|terminate)\b/i.test(normalized);
+  const isOpen = /\b(open|launch|start|run|show)\b/i.test(normalized);
+  const hasPronoun = /\b(both|them|it|all)\b/i.test(normalized);
+
+  if ((!isClose && !isOpen) || !hasPronoun) {
+    return userMessage;
+  }
+
+  // Trace opened and closed apps
+  const openedApps = new Map<string, string>();
+  const closedApps = new Map<string, string>();
+  for (const msg of messages) {
+    if (msg.role === "assistant" && msg.content) {
+      const lines = msg.content.split("\n");
+      for (const line of lines) {
+        const launchMatch = line.match(/launch_app\s*\(\s*app_name\s*=\s*"([^"]+)"\s*\)/i) ||
+                            line.match(/launch_app\s*\(\s*"([^"]+)"\s*\)/i);
+        if (launchMatch) {
+          const app = launchMatch[1].trim();
+          openedApps.set(app.toLowerCase(), app);
+          closedApps.delete(app.toLowerCase());
+        }
+        
+        const closeMatch = line.match(/close_app\s*\(\s*app_name\s*=\s*"([^"]+)"\s*\)/i) ||
+                           line.match(/close_app\s*\(\s*"([^"]+)"\s*\)/i);
+        if (closeMatch) {
+          const app = closeMatch[1].trim();
+          openedApps.delete(app.toLowerCase());
+          closedApps.set(app.toLowerCase(), app);
+        }
+      }
+    }
+  }
+
+  // Determine target apps depending on the verb
+  let targetApps: string[] = [];
+  if (isClose) {
+    targetApps = Array.from(openedApps.values());
+  } else if (isOpen) {
+    targetApps = Array.from(closedApps.values());
+    // Fallback to openedApps if closedApps is empty
+    if (targetApps.length === 0) {
+      targetApps = Array.from(openedApps.values());
+    }
+  }
+
+  if (targetApps.length === 0) {
+    return userMessage;
+  }
+
+  const appsStr = targetApps.join(" and ");
+
+  if (isClose) {
+    const closePronounRegex = /\b(close|quit|exit|stop|terminate)\s+(?:both|them|it|all)(?:\s+apps)?(?:\s+of\s+them)?(?:\s+all)?\b/i;
+    if (closePronounRegex.test(userMessage)) {
+      return userMessage.replace(closePronounRegex, (_match, verb) => {
+        return `${verb} ${appsStr}`;
+      });
+    }
+  }
+
+  if (isOpen) {
+    const openPronounRegex = /\b(open|launch|start|run|show)\s+(?:both|them|it|all)(?:\s+apps)?(?:\s+of\s+them)?(?:\s+all)?\b/i;
+    if (openPronounRegex.test(userMessage)) {
+      return userMessage.replace(openPronounRegex, (_match, verb) => {
+        return `${verb} ${appsStr}`;
+      });
+    }
+  }
+
+  return userMessage;
+}
+
 export function buildConversationHistory(
   messages: ChatMessage[],
   memory: UserMemory,
@@ -422,6 +498,17 @@ export function buildConversationHistory(
   whatsappContacts?: WhatsAppContact[],
 ): CompactionResult {
 
+  // Resolve pronouns in the user messages first
+  const resolvedMessages = [...messages];
+  for (let i = resolvedMessages.length - 1; i >= 0; i--) {
+    if (resolvedMessages[i].role === "user") {
+      resolvedMessages[i] = {
+        ...resolvedMessages[i],
+        content: resolveAppPronouns(resolvedMessages[i].content, messages.slice(0, i))
+      };
+      break;
+    }
+  }
 
   // Inject relevant skills into the system prompt
   let skillsSection = "";
@@ -437,7 +524,7 @@ export function buildConversationHistory(
   }
 
   // 1. Sanitize all messages
-  const sanitized = messages
+  const sanitized = resolvedMessages
     .map(sanitizeMessageForModel)
     .filter((msg): msg is ChatMessage => msg !== null);
 
@@ -471,14 +558,14 @@ export function buildConversationHistory(
   let systemPrompt: string;
   let dynamicContext = "";
 
-  const userMsg = getLatestUserMessage(messages);
+  const userMsg = getLatestUserMessage(resolvedMessages);
   const categories = detectRequiredToolCategories(
     userMsg,
-    messages,
+    resolvedMessages,
     whatsappContacts || undefined,
     lastToolResult || undefined
   );
-  console.log("[CHAT][DIAG] buildConversationHistory", { intent: latestIntent, inputLength: userMsg.length, inputPreview: userMsg.slice(0, 80), categories, messagesIn: messages.length, contactsCount: whatsappContacts?.length ?? 0 });
+  console.log("[CHAT][DIAG] buildConversationHistory", { intent: latestIntent, inputLength: userMsg.length, inputPreview: userMsg.slice(0, 80), categories, messagesIn: resolvedMessages.length, contactsCount: whatsappContacts?.length ?? 0 });
 
   if (latestIntent === "action") {
     console.log("[CHAT][DIAG] Building ACTION prompt (system + few-shots + tool sigs)");
@@ -528,7 +615,7 @@ CRITICAL: If the user says "Yes", "Okay", "Sure" or agrees after you asked them 
   }
 
   // Calculate wrapped version of ONLY the current user message (without prepended previous messages)
-  const lastUserMsgInInput = [...messages].reverse().find(m => m.role === "user");
+  const lastUserMsgInInput = [...resolvedMessages].reverse().find(m => m.role === "user");
   const originalUserContent = lastUserMsgInInput ? lastUserMsgInInput.content : "";
   let wrappedUserMessage = originalUserContent;
 
@@ -813,9 +900,77 @@ export function detectActionIntent(
 ): ActionIntent {
   const normalized = text.toLowerCase().replace(/[.?!\s]+$/, "").trim();
 
+  // 1. Check if user is asking to open/close apps using pronouns (both/them/it/all)
+  // and we don't have any apps in the chat history to resolve them.
+  const isAppPronoun = /\b(open|launch|start|run|close|quit|exit|stop|terminate)\s+(both|them|it|all)\b/i.test(normalized);
+  if (isAppPronoun) {
+    const openedApps = new Set<string>();
+    const closedApps = new Set<string>();
+    for (const msg of recentMessages) {
+      if (msg.role === "assistant" && msg.content) {
+        const lines = msg.content.split("\n");
+        for (const line of lines) {
+          const launchMatch = line.match(/launch_app\s*\(\s*app_name\s*=\s*"([^"]+)"\s*\)/i) ||
+                              line.match(/launch_app\s*\(\s*"([^"]+)"\s*\)/i);
+          if (launchMatch) {
+            const app = launchMatch[1].trim().toLowerCase();
+            openedApps.add(app);
+            closedApps.delete(app);
+          }
+          const closeMatch = line.match(/close_app\s*\(\s*app_name\s*=\s*"([^"]+)"\s*\)/i) ||
+                             line.match(/close_app\s*\(\s*"([^"]+)"\s*\)/i);
+          if (closeMatch) {
+            const app = closeMatch[1].trim().toLowerCase();
+            openedApps.delete(app);
+            closedApps.add(app);
+          }
+        }
+      }
+    }
+
+    const isClose = /\b(close|quit|exit|stop|terminate)\b/i.test(normalized);
+    const isOpen = /\b(open|launch|start|run)\b/i.test(normalized);
+
+    if (isClose && openedApps.size === 0) {
+      return "chat";
+    }
+    if (isOpen && closedApps.size === 0 && openedApps.size === 0) {
+      return "chat";
+    }
+  }
+
+  // 2. Check if user is asking to send "the same message" or "it" but we don't
+  // have any preceding WhatsApp/email message in history.
+  const isSameMessagePronoun = /\b(send|message|text|email)\s+(the\s+)?(same|it)\b/i.test(normalized);
+  if (isSameMessagePronoun) {
+    let hasPreviousMessage = false;
+    for (const msg of recentMessages) {
+      if (msg.role === "assistant" && msg.content) {
+        if (msg.content.includes("send_whatsapp_message") || msg.content.includes("send_email")) {
+          hasPreviousMessage = true;
+          break;
+        }
+      }
+    }
+    if (!hasPreviousMessage) {
+      return "chat";
+    }
+  }
+
+  // 3. Check if user is only specifying a recipient to message or email,
+  // without specifying what subject or message body to send.
+  const isOnlyMessageRecipient = /^(?:message|send\s+(?:a\s+)?(?:whatsapp\s+)?message\s+to|tell|ask)\s+([a-zA-Z0-9]+)$/i.test(normalized);
+  if (isOnlyMessageRecipient) {
+    return "chat";
+  }
+  const isOnlyEmailRecipient = /^(?:email|send\s+(?:an\s+)?email\s+to)\s+(\S+@\S+|[a-zA-Z0-9]+)$/i.test(normalized);
+  if (isOnlyEmailRecipient) {
+    return "chat";
+  }
+
 const commandPatterns = [
   /\b[a-zA-Z\s]+-\s*\+?[0-9\s-]{8,}\b/i,
-  /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|file manager|filemanager|files|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
+  /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|both|them|it|all|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|file manager|filemanager|files|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
   /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent)\b/i,
   /\b(add|save|create|configure|setup|set up)\b.{0,30}\b(contact|whatsapp contact|email config|smtp)\b/i,
   /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(auto[- ]?reply|whatsapp|it)\b/i,
