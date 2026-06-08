@@ -24,7 +24,7 @@ export const ALL_TOOL_NAMES: ToolName[] = TOOLS.map((t) => t.name) as ToolName[]
 export { DISCORD_TOOLS_WITH_GUILD_ID, TOOL_DESCRIPTIONS, TOOL_PARAMS };
 
 /** Tool signatures for the action prompt */
-export function getToolSignatures(categories?: string[]): string {
+function getToolSignatures(categories?: string[]): string {
   const filtered =
     !categories || categories.length === 0
       ? TOOLS
@@ -334,98 +334,6 @@ export function isToolName(value: unknown): value is ToolName {
   );
 }
 
-/** Normalize a tool call object, handling known variations */
-export function normalizeToolCall(value: unknown): ToolCall | null {
-  if (!value || typeof value !== "object") return null;
-
-  const candidate = value as { tool?: unknown; args?: unknown };
-  if (typeof candidate.tool !== "string") return null;
-  if (!candidate.args || typeof candidate.args !== "object") return null;
-
-  const args = { ...(candidate.args as ToolArgs) };
-
-  // Standardize text/task for add_todo
-  if (candidate.tool === "add_todo") {
-    if ("reminder" in args && !("text" in args)) {
-      args.text = args.reminder;
-      delete args.reminder;
-    }
-    if ("task" in args && !("text" in args)) {
-      args.text = args.task;
-      delete args.task;
-    }
-    if ("todo" in args && !("text" in args)) {
-      args.text = args.todo;
-      delete args.todo;
-    }
-  }
-
-  // Standardize agent_name for send_to_cli_agent
-  if (candidate.tool === "send_to_cli_agent") {
-    if ("agentName" in args && !("agent_name" in args)) {
-      args.agent_name = args.agentName;
-      delete args.agentName;
-    }
-    if (typeof args.agent_name === "string") {
-      const lower = (args.agent_name as string).toLowerCase().trim();
-      if (lower === "agy" || lower === "agye" || lower === "antigravity")
-        args.agent_name = "agy";
-      else if (
-        lower === "claude" ||
-        lower === "claude-code" ||
-        lower === "claude_code" ||
-        lower === "claudecode"
-      )
-        args.agent_name = "claude-code";
-      else if (lower === "freebuff" || lower === "freebuf")
-        args.agent_name = "freebuff";
-    }
-  }
-
-  // Standardize status for set_discord_status
-  if (candidate.tool === "set_discord_status") {
-    if (typeof args.status === "string") {
-      const lower = args.status.toLowerCase().trim();
-      if (["online", "active", "run", "running"].includes(lower)) {
-        args.status = "online";
-      } else if (
-        ["dnd", "busy", "do not disturb", "do_not_disturb"].includes(lower)
-      ) {
-        args.status = "dnd";
-      } else if (["offline", "invisible", "hidden"].includes(lower)) {
-        args.status = "invisible";
-      } else {
-        args.status = "idle";
-      }
-    }
-  }
-
-  return { tool: candidate.tool, args };
-}
-
-/** Format a test case to few-shot string for the model */
-export function formatTestCaseToFewShot(tc: {
-  input: string;
-  expected: ToolCall[];
-}): string {
-  let output = `User Request: ${tc.input}\nPlan:\n`;
-  if (tc.expected.length === 0) {
-    output += "- conversational()\n";
-  } else {
-    for (const ec of tc.expected) {
-      const argsPart = Object.entries(ec.args)
-        .filter(([k]) => k !== "guild_id")
-        .map(([k, v]) => {
-          if (typeof v === "string") return `${k}="${v}"`;
-          if (v === null) return `${k}=null`;
-          return `${k}=${v}`;
-        })
-        .join(", ");
-      output += `- ${ec.tool}(${argsPart})\n`;
-    }
-  }
-  return output;
-}
 
 /** Get the unified action few-shot examples as a string. */
 export function getActionFewShots(categories?: string[]): string {

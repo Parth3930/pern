@@ -7,7 +7,7 @@ const SpeechRecognition =
     : null;
 
 // Programmatic audio synthesis using Web Audio API (0 KB package size overhead)
-export async function playBeep(type: "wake" | "listening" | "error" = "wake") {
+async function playBeep(type: "wake" | "listening" | "error" = "wake") {
   try {
     const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
@@ -53,7 +53,7 @@ export async function playBeep(type: "wake" | "listening" | "error" = "wake") {
 }
 
 // Find a friendly, natural English voice pre-installed on the OS
-export function getFriendlyVoice(): SpeechSynthesisVoice | null {
+function getFriendlyVoice(): SpeechSynthesisVoice | null {
   if (typeof window === "undefined" || !window.speechSynthesis) return null;
   const voices = window.speechSynthesis.getVoices();
   if (voices.length === 0) return null;
@@ -344,7 +344,7 @@ export function useSpeech({ onCommandDetected }: UseSpeechProps = {}) {
     if (wakeWordRecRef.current) {
       try {
         const oldRec = wakeWordRecRef.current;
-        wakeWordRecRef.current = null; // Disconnect first so onend doesn't restart it
+        wakeWordRecRef.current = null;
         oldRec.abort();
       } catch (e) {}
     }

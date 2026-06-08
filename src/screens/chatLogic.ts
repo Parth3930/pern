@@ -153,7 +153,7 @@ export function stripToolCalls(content: string): string {
   return lines.join("\n").trim();
 }
 
-export function sanitizeMessageForModel(
+function sanitizeMessageForModel(
   message: ChatMessage,
 ): ChatMessage | null {
   if (message.role === "system" && message.content.startsWith("Tool Result:")) {
@@ -296,7 +296,7 @@ function getCategoryForTool(toolName: string): string | null {
   return null;
 }
 
-export function detectRequiredToolCategories(
+function detectRequiredToolCategories(
   userMessage: string,
   messages: ChatMessage[],
   whatsappContacts?: { name: string }[],
@@ -785,24 +785,6 @@ export function buildToolReply(toolCall: ToolCall, result: ToolResult): string {
   return result.error || result.message || "The action failed.";
 }
 
-export function replacePendingToolMessage(
-  messages: ChatMessage[],
-): ChatMessage[] {
-  const nextMessages = [...messages];
-  for (let i = nextMessages.length - 1; i >= 0; i -= 1) {
-    const message = nextMessages[i];
-    if (message.role !== "assistant") continue;
-    const cleanContent = stripToolCalls(message.content);
-    if (!cleanContent) {
-      nextMessages.splice(i, 1);
-    } else {
-      nextMessages[i] = { ...message, content: cleanContent };
-    }
-    break;
-  }
-  return nextMessages;
-}
-
 export function removeTrailingAssistantMessage(
   messages: ChatMessage[],
 ): ChatMessage[] {
@@ -816,17 +798,13 @@ export function removeTrailingAssistantMessage(
   return nextMessages;
 }
 
-export function getLatestUserMessage(messages: ChatMessage[]): string {
+function getLatestUserMessage(messages: ChatMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     if (messages[i].role === "user") {
       return messages[i].content;
     }
   }
   return "";
-}
-
-export function hasToolLikeOutput(content: string): boolean {
-  return content.includes('"tool":') && content.includes('"args":');
 }
 
 export function detectActionIntent(
@@ -931,23 +909,4 @@ const commandPatterns = [
   }
 
   return "chat";
-}
-
-export function buildRetryConversationHistory(
-  messages: ChatMessage[],
-  memory: UserMemory,
-  latestIntent: ActionIntent,
-  lastToolResult?: { tool: string; status: string },
-  chatActionMemory?: ChatActionMemoryArg,
-  whatsappContacts?: WhatsAppContact[],
-): CompactionResult {
-  return buildConversationHistory(
-    messages,
-    memory,
-    latestIntent,
-    lastToolResult,
-    chatActionMemory,
-    undefined,
-    whatsappContacts,
-  );
 }

@@ -291,13 +291,13 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
                     Automatically start Pern when you log into Windows
                   </span>
                 </div>
-                <label className="switch">
+                <label className="settings-switch">
                   <input
                     type="checkbox"
                     checked={autostartEnabled}
                     onChange={(e) => setAutostartEnabled(e.target.checked)}
                   />
-                  <span className="slider"></span>
+                  <span className="settings-slider"></span>
                 </label>
               </div>
             </div>
@@ -376,13 +376,13 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
                     <label className="settings-label" style={{ margin: 0 }}>Wake Word Detection</label>
                     <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>Listen continuously in the background to activate voice mode</span>
                   </div>
-                  <label className="switch">
+                  <label className="settings-switch">
                     <input
                       type="checkbox"
                       checked={wakeWordEnabled}
                       onChange={(e) => setWakeWordEnabled(e.target.checked)}
                     />
-                    <span className="slider"></span>
+                    <span className="settings-slider"></span>
                   </label>
                 </div>
               </div>
@@ -409,13 +409,13 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
                     <label className="settings-label" style={{ margin: 0 }}>Speak Responses</label>
                     <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>Read the assistant responses aloud using text-to-speech</span>
                   </div>
-                  <label className="switch">
+                  <label className="settings-switch">
                     <input
                       type="checkbox"
                       checked={ttsEnabled}
                       onChange={(e) => setTtsEnabled(e.target.checked)}
                     />
-                    <span className="slider"></span>
+                    <span className="settings-slider"></span>
                   </label>
                 </div>
               </div>
