@@ -3,6 +3,34 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "Offline-First Local AI Desktop & Mobile Assistant built with Tauri v2, React 19, TypeScript, and Rust. A private, secure personal assistant featuring deep integrations with WhatsApp, Discord, Email, Projects, and CLI agents.",
+  "author": "Parth3930",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Parth3930/pern.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Parth3930/pern/issues"
+  },
+  "homepage": "https://github.com/Parth3930/pern#readme",
+  "keywords": [
+    "local-ai",
+    "offline-ai",
+    "tauri-v2",
+    "react-19",
+    "typescript",
+    "rust-backend",
+    "llama-cpp",
+    "llama-server",
+    "whatsapp-agent",
+    "discord-moderation-bot",
+    "cli-agent",
+    "privacy-first",
+    "personal-assistant",
+    "desktop-assistant",
+    "mobile-ai-assistant"
+  ],
   "scripts": {
     "codegen": "node scripts/sync-tools.js",
     "dev": "npm run codegen && vite",

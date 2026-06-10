@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android-green?style=flat-square)](#multi-platform-support)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](LICENSE)
 
-Pern is a modern, cross-platform personal AI assistant built using **Tauri v2**, **React 19**, and **TypeScript**. It operates completely offline, securely, and privately by running an embedded local Llama server (`llama-server` / `llama.cpp`) directly on your device. Pern ensures total privacy for your data, conversations, and workflows without requiring external API keys or cloud connections.
+Pern is a private, offline-first personal AI assistant and developer workspace built using **Tauri v2**, **React 19**, **TypeScript**, and **Rust**. It operates entirely locally on your machine, leveraging an embedded local Llama server (`llama-server` / `llama.cpp`) to run GGUF language and reasoning models securely. Pern ensures absolute data privacy for your conversations, projects, and automated workflows without calling external APIs or requiring an active internet connection.
 
 ---
 
@@ -18,7 +18,7 @@ Pern is a modern, cross-platform personal AI assistant built using **Tauri v2**,
 4. [Technology Stack](#-technology-stack)
 5. [Model Registry & Hardware Recommendations](#-model-registry--hardware-recommendations)
 6. [Local Development & Build Instructions](#-local-development--build-instructions)
-7. [SEO & Search Visibility](#-seo--search-visibility)
+7. [GitHub SEO & Search Visibility](#-github-seo--search-visibility)
 
 ---
 
@@ -181,9 +181,15 @@ Pern includes a pre-configured registry of optimized GGUF chat and reasoning mod
 
 ---
 
-## 🔍 SEO & Search Visibility
+## 🔍 GitHub SEO & Search Visibility
 
-This project is built with strong SEO architectures. The landing web wrapper features:
-* Descriptive, keyword-rich metadata targeting local LLMs, Tauri v2 offline wrappers, and AI automation.
-* Open Graph (OG) and Twitter card configuration for high-fidelity social previews.
-* Semantic HTML5 layout to ensure excellent indexability on search engines.
+This repository is optimized for discoverability and indexability. 
+
+### 🏷️ Recommended GitHub Topics (Tags)
+To ensure Pern ranks high in search results and feed recommendations, apply the following topics in your repository settings:
+`local-ai` · `offline-first` · `tauri-v2` · `react-19` · `rust-backend` · `llama-cpp` · `private-ai` · `personal-assistant` · `whatsapp-agent` · `discord-moderation` · `desktop-assistant` · `android-ai` · `llama-server` · `tokio-rust` · `developer-tools`
+
+### 🌐 Metadata Architectures
+* **Keyword-Rich Copy**: Headers and descriptions are written to rank for local LLMs, Tauri v2 wrappers, and local AI automations.
+* **Open Graph (OG) & Twitter Cards**: Clean social media embeds and previews are set up inside `index.html`.
+* **Semantic HTML5 & Performance**: Designed for high accessibility and efficient crawling by search engine spiders.
