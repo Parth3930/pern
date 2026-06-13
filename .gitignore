@@ -31,3 +31,11 @@ pern-release-signed.apk
 pern-release-signed.apk.idsig
 handoff.md
 pern.md
+
+# Local tool / IDE caches
+.antigravitycli
+.crush
+.graphify
+
+# Build & analysis artifacts
+graphify-out
