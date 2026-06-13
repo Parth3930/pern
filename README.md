@@ -7,37 +7,34 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android-green?style=flat-square)](#multi-platform-support)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](LICENSE)
 
-Pern is a private, offline-first personal AI assistant and developer workspace built using **Tauri v2**, **React 19**, **TypeScript**, and **Rust**. It operates entirely locally on your machine, leveraging an embedded local Llama server (`llama-server` / `llama.cpp`) to run GGUF language and reasoning models securely. Pern ensures absolute data privacy for your conversations, projects, and automated workflows without calling external APIs or requiring an active internet connection.
+Pern is a private, offline-first personal AI assistant and developer workspace built using **Tauri v2**, **React 19**, **TypeScript**, and **Rust**. It runs an embedded local Llama server (`llama-server` / `llama.cpp`) to execute GGUF language and reasoning models entirely on-device — no external API keys, no cloud round-trips, no data leaving your hardware.
 
 ---
 
-## 📖 Table of Contents
+## Table of Contents
 1. [Key Features](#-key-features)
-2. [Project Architecture & Dependency Mapping](#-project-architecture--dependency-mapping)
+2. [Project Architecture](#-project-architecture)
 3. [Deep Integration Modules](#-deep-integration-modules)
 4. [Technology Stack](#-technology-stack)
 5. [Model Registry & Hardware Recommendations](#-model-registry--hardware-recommendations)
 6. [Local Development & Build Instructions](#-local-development--build-instructions)
-7. [GitHub SEO & Search Visibility](#-github-seo--search-visibility)
 
 ---
 
 ## ✨ Key Features
 
-* **Offline & Private AI**: Runs a local, device-native `llama-server` instance. No external API keys are required; your data never leaves your hardware.
-* **Unified Onboarding Setup**: A step-by-step setup screen that downloads, extracts, and configures optimized Llama engine binaries matching your OS.
-* **Stream & Cancellation Control**: Real-time server-sent events (SSE) streaming for AI completions, with instant prompt cancellation support.
-* **Skills Learner & Memory**: Tracks tool usage statistics to generate learning insights and build long-term user memory.
-* **Deep Tool Ecosystem**: Connects the AI directly to your WhatsApp, Discord, workspace files, local terminal, and email inbox.
-* **Multi-Platform UI**: Tailored layouts built for desktop (with system tray integration and auto-positioning) and mobile (Android viewport optimization).
+* **Offline & Private AI** — runs a local, device-native `llama-server` instance. No external API keys, no telemetry.
+* **Unified Onboarding** — a step-by-step setup screen that downloads, extracts, and configures optimized Llama engine binaries matching your OS.
+* **Streamed Completions with Cancellation** — server-sent events (SSE) streaming for AI completions, with instant prompt cancellation.
+* **Skills Learner & Memory** — tracks tool usage statistics to surface learning insights and a long-term user memory file.
+* **Deep Tool Ecosystem** — connects the AI to WhatsApp, Discord, your workspace files, a local terminal, and email.
+* **Multi-Platform UI** — tailored layouts for desktop (system tray + auto-positioning) and mobile (Android viewport optimization).
 
 ---
 
-## 📐 Project Architecture & Dependency Mapping
+## 📐 Project Architecture
 
-To fully map and design Pern, we analyzed the codebase dependencies using **Graphify**. The core architecture consists of a React 19 frontend communicating with a Rust-based Tauri v2 shell, which in turn manages an embedded `llama-server` process and various integrations.
-
-### 🌐 System Architecture Diagram
+The core architecture: a React 19 frontend talks to a Rust-based Tauri v2 shell, which manages an embedded `llama-server` process and the integration modules.
 
 ```mermaid
 graph TD
@@ -72,20 +69,18 @@ graph TD
     CLI -.->|Run Local Commands| SystemOS[Local OS Terminal]
 ```
 
-### 🧩 Core Modules & Graphify Analysis
+### Core Modules
 
-Through Graphify's dependency extraction, the system is organized into the following key communities:
-1. **Tauri Commands & State** (`commands.rs`, `commands/`): Exposes IPC entry points (`check_llama_installed`, `download_model`, `start_llama_server`, etc.) that link UI actions to the OS backend.
-2. **Onboarding UI & App Entry** (`Onboarding.tsx`, `App.tsx`): Verifies local environments, manages automatic tray positioning on desktop, and guides the user through fetching hardware-optimized `.gguf` models.
-3. **App Configuration & Storage** (`storage.rs`, `AppState`): Configures user preferences, handles path settings for `.gguf` files, and manages the global state.
-4. **Skills Learner & Memory** (`learner.rs`, `skills.rs`, `memory.rs`): Logs tool usage, records skill invocation statistics, and maintains a long-term memory file.
-5. **Chat Logic & Models** (`chat.rs`, `chat_prompt.rs`, `model.rs`): Processes tokens sent to the frontend via web sockets and monitors the health of `llama-server`.
+The system is organized into the following key communities:
+1. **Tauri Commands & State** (`commands.rs`, `commands/`) — IPC entry points (`check_llama_installed`, `download_model`, `start_llama_server`, …) that link UI actions to the OS backend.
+2. **Onboarding UI & App Entry** (`Onboarding.tsx`, `App.tsx`) — verifies the local environment, manages automatic tray positioning on desktop, and guides the user through fetching hardware-optimized `.gguf` models.
+3. **App Configuration & Storage** (`storage.rs`, `AppState`) — user preferences, paths for `.gguf` files, and global state.
+4. **Skills Learner & Memory** (`learner.rs`, `skills.rs`, `memory.rs`) — tool usage logs, invocation statistics, and a long-term memory file.
+5. **Chat Logic & Models** (`chat.rs`, `chat_prompt.rs`, `model.rs`) — token streaming to the frontend and `llama-server` health monitoring.
 
 ---
 
 ## 🔌 Deep Integration Modules
-
-Pern extends beyond a simple chat interface by implementing dedicated tool integration modules:
 
 ### 📁 Projects Manager (`projects.rs` & `src/integrations/projects`)
 * Link local developer directories and codebases directly to the assistant.
@@ -97,8 +92,8 @@ Pern extends beyond a simple chat interface by implementing dedicated tool integ
 * Set up automated triggers, message dispatching, and AI-powered auto-replies for selected contacts.
 
 ### 👾 Discord Mod & Agent (`discord.rs` & `src/integrations/discord`)
-* Integrates a full Discord bot runner inside the application.
-* Provides moderation commands: kick, ban, warn, mute, unmute, and message deletion.
+* A full Discord bot runner embedded in the application.
+* Moderation commands: kick, ban, warn, mute, unmute, and message deletion.
 * Automates channel responses, monitors member behavior, and dispatches DMs or channel messages.
 
 ### 💻 CLI Agents (`cli_agents.rs` & `src/integrations/cli_agents`)
@@ -113,14 +108,12 @@ Pern extends beyond a simple chat interface by implementing dedicated tool integ
 
 ## 🛠️ Technology Stack
 
-Pern leverages a high-performance stack optimized for resource efficiency and local execution:
-
-* **Frontend Framework**: [React 19](https://react.dev/) & [TypeScript](https://www.typescriptlang.org/)
-* **Build Tooling & Bundler**: [Vite](https://vite.dev/)
-* **App Shell & Native APIs**: [Tauri v2](https://tauri.app/) (Rust wrapper)
-* **Local Configuration**: JSON-based settings storage (`storage.rs`)
-* **Async Runtime**: [Tokio](https://tokio.rs/)
-* **Icons & UI Assets**: [Lucide React Icons](https://lucide.dev/)
+* **Frontend Framework** — [React 19](https://react.dev/) & [TypeScript](https://www.typescriptlang.org/)
+* **Build Tooling & Bundler** — [Vite](https://vite.dev/)
+* **App Shell & Native APIs** — [Tauri v2](https://tauri.app/) (Rust wrapper)
+* **Local Configuration** — JSON-based settings storage (`storage.rs`)
+* **Async Runtime** — [Tokio](https://tokio.rs/)
+* **Icons & UI Assets** — [Lucide React Icons](https://lucide.dev/)
 
 ---
 
@@ -178,18 +171,3 @@ Pern includes a pre-configured registry of optimized GGUF chat and reasoning mod
   ```bash
   npm run android:build
   ```
-
----
-
-## 🔍 GitHub SEO & Search Visibility
-
-This repository is optimized for discoverability and indexability. 
-
-### 🏷️ Recommended GitHub Topics (Tags)
-To ensure Pern ranks high in search results and feed recommendations, apply the following topics in your repository settings:
-`local-ai` · `offline-first` · `tauri-v2` · `react-19` · `rust-backend` · `llama-cpp` · `private-ai` · `personal-assistant` · `whatsapp-agent` · `discord-moderation` · `desktop-assistant` · `android-ai` · `llama-server` · `tokio-rust` · `developer-tools`
-
-### 🌐 Metadata Architectures
-* **Keyword-Rich Copy**: Headers and descriptions are written to rank for local LLMs, Tauri v2 wrappers, and local AI automations.
-* **Open Graph (OG) & Twitter Cards**: Clean social media embeds and previews are set up inside `index.html`.
-* **Semantic HTML5 & Performance**: Designed for high accessibility and efficient crawling by search engine spiders.
