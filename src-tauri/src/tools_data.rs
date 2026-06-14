@@ -259,6 +259,20 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
         params: &["key"],
         signature: "- forget_fact(key: string) -> Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
+    },
+    ToolDefinition {
+        name: "list_automations",
+        category: "automation",
+        description: "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
+        params: &["query", "k"],
+        signature: "- list_automations(query?: string, k?: number) -> Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
+    },
+    ToolDefinition {
+        name: "run_automation",
+        category: "automation",
+        description: "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
+        params: &["name"],
+        signature: "- run_automation(name: string) -> Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
     }
 ];
 
@@ -317,7 +331,13 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("find_fact", "recall_fact"),
     ("forget", "forget_fact"),
     ("delete_fact", "forget_fact"),
-    ("remove_fact", "forget_fact")
+    ("remove_fact", "forget_fact"),
+    ("list_automation", "list_automations"),
+    ("show_automations", "list_automations"),
+    ("get_automations", "list_automations"),
+    ("trigger_automation", "run_automation"),
+    ("execute_automation", "run_automation"),
+    ("fire_automation", "run_automation")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[

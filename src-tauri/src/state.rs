@@ -1,3 +1,4 @@
+use crate::automations::manager::AutomationManager;
 use crate::integrations::cli_agents::CLIAgentManager;
 use crate::memory_graph::MemoryGraph;
 use crate::storage::AppConfig;
@@ -19,6 +20,9 @@ pub struct AppState {
     /// Long-term memory graph (entities + relations), loaded from disk at
     /// startup and persisted after every mutation. See `memory_graph.rs`.
     pub memory_graph: Arc<Mutex<MemoryGraph>>,
+    /// Owns the on-disk automation store + run history + dedupe state.
+    /// Shared with the scheduler and executor. See `automations::manager`.
+    pub automation_manager: Arc<AutomationManager>,
 }
 
 impl AppState {
@@ -40,6 +44,7 @@ impl AppState {
             start_time: std::time::Instant::now(),
             pending_external_replies: Arc::new(Mutex::new(std::collections::HashMap::new())),
             memory_graph: Arc::new(Mutex::new(memory_graph)),
+            automation_manager: Arc::new(AutomationManager::new()),
         }
     }
 }

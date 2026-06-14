@@ -256,6 +256,20 @@ export const TOOLS = [
     description: "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
     params: ["key"],
     signature: "- forget_fact(key: string) -> Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget."
+  },
+  {
+    name: "list_automations",
+    category: "automation",
+    description: "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
+    params: ["query", "k"],
+    signature: "- list_automations(query?: string, k?: number) -> Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count."
+  },
+  {
+    name: "run_automation",
+    category: "automation",
+    description: "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
+    params: ["name"],
+    signature: "- run_automation(name: string) -> Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status."
   }
 ] as const;
 
@@ -314,7 +328,13 @@ export const ALIAS_MAP = {
   "find_fact": "recall_fact",
   "forget": "forget_fact",
   "delete_fact": "forget_fact",
-  "remove_fact": "forget_fact"
+  "remove_fact": "forget_fact",
+  "list_automation": "list_automations",
+  "show_automations": "list_automations",
+  "get_automations": "list_automations",
+  "trigger_automation": "run_automation",
+  "execute_automation": "run_automation",
+  "fire_automation": "run_automation"
 } as const;
 
 export const FEW_SHOTS = [
@@ -558,7 +578,9 @@ export const TOOL_DESCRIPTIONS = {
   "add_todo": "Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional.",
   "remember_fact": "Stores a fact in long-term memory. category is one of: person, project, preference, recurring_task, other. key is the canonical lookup name (e.g. 'robert'). value is the fact itself. aliases is an optional list of alternate names that should also resolve to this fact (e.g. ['Bob','Bobby'] for robert).",
   "recall_fact": "Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
-  "forget_fact": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget."
+  "forget_fact": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
+  "list_automations": "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
+  "run_automation": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status."
 } as const;
 
 export const TOOL_PARAMS = {
@@ -595,5 +617,7 @@ export const TOOL_PARAMS = {
   "add_todo": ["text", "time", "repeat_hours"],
   "remember_fact": ["category", "key", "value", "aliases"],
   "recall_fact": ["query", "k"],
-  "forget_fact": ["key"]
+  "forget_fact": ["key"],
+  "list_automations": ["query", "k"],
+  "run_automation": ["name"]
 } as const;

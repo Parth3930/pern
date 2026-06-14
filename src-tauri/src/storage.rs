@@ -1,3 +1,4 @@
+use crate::automations::Automation as AutomationDef;
 use crate::integrations::cli_agents::CLIAgentConfig;
 use crate::learner::ToolUsageStats;
 use crate::memory::UserMemory;
@@ -46,6 +47,21 @@ pub struct AppConfig {
     pub llama_gpu_layers: i32,
     pub llama_threads: i32,
     pub llama_flash_attn: String,
+    /// v4: persisted user-authored automations. The manager loads from
+    /// `<app_dir>/automations.json`, so this is mostly a denormalised cache
+    /// for the frontend. We keep it for "list on cold start before the
+    /// manager has finished loading" scenarios. The on-disk automations
+    /// file is the source of truth.
+    #[serde(default)]
+    pub automations: Vec<AutomationConfig>,
+    /// v4: feature flag for the scheduler. If `false`, the scheduler skips
+    /// all automations (they still exist in the store).
+    #[serde(default = "default_automations_enabled")]
+    pub automations_enabled: bool,
+}
+
+fn default_automations_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -53,6 +69,13 @@ pub struct ProjectConfig {
     pub name: String,
     pub path: String,
 }
+
+/// Thin re-export of `crate::automations::Automation` for the config
+/// snapshot. The fields intentionally mirror `Automation` — the `From` impls
+/// are how we keep the two in sync. If you add a field to
+/// `automations::Automation`, mirror it here or `From` conversions will lose
+/// data silently.
+pub type AutomationConfig = AutomationDef;
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -97,11 +120,13 @@ impl Default for AppConfig {
             llama_gpu_layers: 999,
             llama_threads: 4,
             llama_flash_attn: "auto".to_string(),
+            automations: Vec::new(),
+            automations_enabled: true,
         }
     }
 }
 
-pub const CURRENT_CONFIG_VERSION: u32 = 3;
+pub const CURRENT_CONFIG_VERSION: u32 = 4;
 
 /// Clear the chat-session-only `conversation_summary` field. The frontend is
 /// expected to call this when a brand new chat session starts — NOT on every
@@ -170,6 +195,18 @@ fn migrate_config_v2_to_v3(_config: &mut AppConfig) -> bool {
     false
 }
 
+/// v3 -> v4: introduce the `automations` and `automations_enabled` fields on
+/// `AppConfig`. The new fields default-populate via `#[serde(default)]`, so
+/// the only action is to ensure the version is bumped. The on-disk
+/// `automations.json` is the source of truth at runtime; this config
+/// snapshot is a cold-start cache.
+fn migrate_config_v3_to_v4(_config: &mut AppConfig) -> bool {
+    // No-op: the new fields have `#[serde(default)]` so missing-on-disk is
+    // already handled. We just stamp the version so future runs skip this
+    // branch.
+    false
+}
+
 pub fn get_app_dir() -> PathBuf {
     #[cfg(target_os = "android")]
     {
@@ -216,6 +253,10 @@ pub fn load_config() -> AppConfig {
                     if config.config_version < 3 {
                         dirty |= migrate_config_v2_to_v3(&mut config);
                         config.config_version = 3;
+                    }
+                    if config.config_version < 4 {
+                        dirty |= migrate_config_v3_to_v4(&mut config);
+                        config.config_version = 4;
                     }
 
                     // NOTE: do NOT clear `conversation_summary` here. The

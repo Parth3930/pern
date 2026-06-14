@@ -1,3 +1,4 @@
+pub mod automations;
 pub mod chat;
 pub mod chat_prompt;
 pub mod commands;
@@ -8,6 +9,7 @@ pub mod logging;
 pub mod memory;
 pub mod memory_graph;
 pub mod model;
+pub mod notifications;
 pub mod skills;
 pub mod state;
 pub mod storage;
@@ -268,6 +270,20 @@ pub fn run() {
                 }
             });
 
+            // Start the automation scheduler. The loop wakes every 30s,
+            // evaluates triggers, fires due automations, writes run records,
+            // and emits `automation_fired` events. The manager dedupes by
+            // `(automation_id, trigger_window)` so multiple ticks inside the
+            // same window never double-fire.
+            let automation_mgr = state.automation_manager.clone();
+            let state_for_scheduler = Arc::new(state.clone());
+            let app_handle_for_scheduler = app_handle.clone();
+            automations::scheduler::spawn(
+                automation_mgr,
+                state_for_scheduler,
+                app_handle_for_scheduler,
+            );
+
             // Desktop-only features: window positioning, system tray, rounded corners
             #[cfg(not(target_os = "android"))]
             {
@@ -411,6 +427,14 @@ pub fn run() {
             commands::memory::memory_delete_relation,
             commands::memory::memory_list_relations,
             commands::memory::clear_conversation_summary,
+            commands::automations::list_automations,
+            commands::automations::get_automation,
+            commands::automations::create_automation,
+            commands::automations::update_automation,
+            commands::automations::delete_automation,
+            commands::automations::run_automation_now,
+            commands::automations::get_run_history,
+            notifications::send_notification_command,
             send_chat_message,
             submit_external_reply
         ])

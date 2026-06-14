@@ -271,6 +271,22 @@
       "description": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
       "params": ["key"],
       "aliases": ["forget", "delete_fact", "remove_fact"]
+    },
+    {
+      "name": "list_automations",
+      "category": "automation",
+      "args_signature": "query?: string, k?: number",
+      "description": "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
+      "params": ["query", "k"],
+      "aliases": ["list_automation", "show_automations", "get_automations"]
+    },
+    {
+      "name": "run_automation",
+      "category": "automation",
+      "args_signature": "name: string",
+      "description": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
+      "params": ["name"],
+      "aliases": ["trigger_automation", "execute_automation", "fire_automation"]
     }
   ],
   "discord_tools_with_guild_id": [
