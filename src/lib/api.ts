@@ -126,6 +126,47 @@ export interface AgentStateInfo {
   binary_found: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Long-term memory graph
+// ---------------------------------------------------------------------------
+
+export type EntityCategory =
+  | "person"
+  | "project"
+  | "preference"
+  | "recurring_task"
+  | "other";
+
+export interface Entity {
+  id: string;
+  category: EntityCategory;
+  key: string;
+  value: string;
+  aliases: string[];
+  source: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EntityPatch {
+  category?: string;
+  key?: string;
+  value?: string;
+  aliases?: string[];
+  source?: string;
+}
+
+export interface Relation {
+  from_id: string;
+  to_id: string;
+  label: string;
+}
+
+export interface SearchHit {
+  entity: Entity;
+  score: number;
+}
+
 let chatTokenUnlisten: UnlistenFn | null = null;
 let chatCompleteUnlisten: UnlistenFn | null = null;
 
@@ -266,6 +307,40 @@ export const api = {
   // Todos persistence
   getTodos: () => invoke<any[]>("get_todos"),
   saveTodos: (todos: any[]) => invoke<void>("save_todos", { todos }),
+
+  // Long-term memory graph
+  memoryListEntities: (category?: string) =>
+    invoke<Entity[]>("memory_list_entities", { category: category ?? null }),
+  memoryGetEntity: (id: string) =>
+    invoke<Entity | null>("memory_get_entity", { id }),
+  memoryAddEntity: (
+    category: string,
+    key: string,
+    value: string,
+    aliases?: string[],
+  ) =>
+    invoke<Entity>("memory_add_entity", {
+      category,
+      key,
+      value,
+      aliases: aliases ?? null,
+    }),
+  memoryUpdateEntity: (id: string, patch: EntityPatch) =>
+    invoke<Entity>("memory_update_entity", { id, patch }),
+  memoryDeleteEntity: (id: string) =>
+    invoke<void>("memory_delete_entity", { id }),
+  memorySearch: (query: string, k?: number) =>
+    invoke<SearchHit[]>("memory_search", { query, k: k ?? null }),
+  memoryAddRelation: (fromId: string, toId: string, label: string) =>
+    invoke<Relation>("memory_add_relation", { fromId, toId, label }),
+  memoryDeleteRelation: (fromId: string, toId: string, label: string) =>
+    invoke<void>("memory_delete_relation", { fromId, toId, label }),
+  memoryListRelations: (fromId?: string) =>
+    invoke<Relation[]>("memory_list_relations", { fromId: fromId ?? null }),
+
+  // Chat-session summary helpers
+  clearConversationSummary: () =>
+    invoke<void>("clear_conversation_summary"),
 
   onCLIAgentComplete: (
     cb: (data: {

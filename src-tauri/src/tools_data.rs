@@ -238,6 +238,27 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional.",
         params: &["text", "time", "repeat_hours"],
         signature: "- add_todo(text: string, time?: string, repeat_hours?: number) -> Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional.",
+    },
+    ToolDefinition {
+        name: "remember_fact",
+        category: "memory",
+        description: "Stores a fact in long-term memory. category is one of: person, project, preference, recurring_task, other. key is the canonical lookup name (e.g. 'robert'). value is the fact itself. aliases is an optional list of alternate names that should also resolve to this fact (e.g. ['Bob','Bobby'] for robert).",
+        params: &["category", "key", "value", "aliases"],
+        signature: "- remember_fact(category: string, key: string, value: string, aliases?: string[]) -> Stores a fact in long-term memory. category is one of: person, project, preference, recurring_task, other. key is the canonical lookup name (e.g. 'robert'). value is the fact itself. aliases is an optional list of alternate names that should also resolve to this fact (e.g. ['Bob','Bobby'] for robert).",
+    },
+    ToolDefinition {
+        name: "recall_fact",
+        category: "memory",
+        description: "Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
+        params: &["query", "k"],
+        signature: "- recall_fact(query: string, k?: number) -> Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
+    },
+    ToolDefinition {
+        name: "forget_fact",
+        category: "memory",
+        description: "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
+        params: &["key"],
+        signature: "- forget_fact(key: string) -> Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
     }
 ];
 
@@ -286,7 +307,17 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("restart", "restart_system"),
     ("reboot", "restart_system"),
     ("shutdown", "shutdown_system"),
-    ("poweroff", "shutdown_system")
+    ("poweroff", "shutdown_system"),
+    ("remember", "remember_fact"),
+    ("memorize", "remember_fact"),
+    ("save_fact", "remember_fact"),
+    ("store_fact", "remember_fact"),
+    ("remember_query", "recall_fact"),
+    ("search_memory", "recall_fact"),
+    ("find_fact", "recall_fact"),
+    ("forget", "forget_fact"),
+    ("delete_fact", "forget_fact"),
+    ("remove_fact", "forget_fact")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[

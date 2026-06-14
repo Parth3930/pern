@@ -247,6 +247,30 @@
       "description": "Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional.",
       "params": ["text", "time", "repeat_hours"],
       "aliases": []
+    },
+    {
+      "name": "remember_fact",
+      "category": "memory",
+      "args_signature": "category: string, key: string, value: string, aliases?: string[]",
+      "description": "Stores a fact in long-term memory. category is one of: person, project, preference, recurring_task, other. key is the canonical lookup name (e.g. 'robert'). value is the fact itself. aliases is an optional list of alternate names that should also resolve to this fact (e.g. ['Bob','Bobby'] for robert).",
+      "params": ["category", "key", "value", "aliases"],
+      "aliases": ["remember", "memorize", "save_fact", "store_fact"]
+    },
+    {
+      "name": "recall_fact",
+      "category": "memory",
+      "args_signature": "query: string, k?: number",
+      "description": "Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
+      "params": ["query", "k"],
+      "aliases": ["remember_query", "search_memory", "find_fact"]
+    },
+    {
+      "name": "forget_fact",
+      "category": "memory",
+      "args_signature": "key: string",
+      "description": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
+      "params": ["key"],
+      "aliases": ["forget", "delete_fact", "remove_fact"]
     }
   ],
   "discord_tools_with_guild_id": [

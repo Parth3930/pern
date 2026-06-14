@@ -1,4 +1,5 @@
 use crate::integrations::cli_agents::CLIAgentManager;
+use crate::memory_graph::MemoryGraph;
 use crate::storage::AppConfig;
 use crate::integrations::whatsapp::WhatsAppManager;
 use std::sync::Arc;
@@ -15,6 +16,9 @@ pub struct AppState {
     pub current_model_id: Arc<Mutex<Option<String>>>,
     pub start_time: std::time::Instant,
     pub pending_external_replies: Arc<Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>>,
+    /// Long-term memory graph (entities + relations), loaded from disk at
+    /// startup and persisted after every mutation. See `memory_graph.rs`.
+    pub memory_graph: Arc<Mutex<MemoryGraph>>,
 }
 
 impl AppState {
@@ -25,6 +29,7 @@ impl AppState {
         tauri::async_runtime::block_on(async {
             cli_mgr.apply_configs(cli_configs).await;
         });
+        let memory_graph = MemoryGraph::load();
         Self {
             config: Arc::new(Mutex::new(config)),
             whatsapp_manager: Arc::new(WhatsAppManager::new()),
@@ -34,6 +39,7 @@ impl AppState {
             current_model_id: Arc::new(Mutex::new(None)),
             start_time: std::time::Instant::now(),
             pending_external_replies: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            memory_graph: Arc::new(Mutex::new(memory_graph)),
         }
     }
 }

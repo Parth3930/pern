@@ -6,6 +6,7 @@ pub mod integrations;
 pub mod learner;
 pub mod logging;
 pub mod memory;
+pub mod memory_graph;
 pub mod model;
 pub mod skills;
 pub mod state;
@@ -400,6 +401,16 @@ pub fn run() {
             commands::system::get_autostart,
             commands::todos::get_todos,
             commands::todos::save_todos,
+            commands::memory::memory_list_entities,
+            commands::memory::memory_get_entity,
+            commands::memory::memory_add_entity,
+            commands::memory::memory_update_entity,
+            commands::memory::memory_delete_entity,
+            commands::memory::memory_search,
+            commands::memory::memory_add_relation,
+            commands::memory::memory_delete_relation,
+            commands::memory::memory_list_relations,
+            commands::memory::clear_conversation_summary,
             send_chat_message,
             submit_external_reply
         ])

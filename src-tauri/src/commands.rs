@@ -1,4 +1,5 @@
 pub mod email;
+pub mod memory;
 pub mod model;
 pub mod projects;
 pub mod skills;
@@ -6,6 +7,7 @@ pub mod system;
 pub mod todos;
 
 pub use email::*;
+pub use memory::*;
 pub use model::*;
 pub use projects::*;
 pub use skills::*;

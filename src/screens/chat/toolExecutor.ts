@@ -457,6 +457,107 @@ export async function executeSingleTool(
     } catch (e) {
       result = { ok: false, error: getErrorMessage(e) };
     }
+  } else if (tc.tool === "remember_fact") {
+    const category = getStringArg(tc.args, "category").toLowerCase();
+    const key = getStringArg(tc.args, "key");
+    const value = getStringArg(tc.args, "value");
+    const rawAliases = Array.isArray(tc.args.aliases) ? tc.args.aliases : [];
+    const aliases: string[] = rawAliases
+      .map((a: unknown) =>
+        typeof a === "string" ? a.trim() : String(a ?? "").trim(),
+      )
+      .filter((a: string) => a.length > 0);
+
+    if (!category || !key || !value) {
+      result = {
+        ok: false,
+        error: "remember_fact requires category, key, and value.",
+      };
+    } else {
+      try {
+        const entity = await api.memoryAddEntity(
+          category,
+          key,
+          value,
+          aliases,
+        );
+        result = {
+          ok: true,
+          message: `Saved ${entity.key} to memory.`,
+        };
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    }
+  } else if (tc.tool === "recall_fact") {
+    const query = getStringArg(tc.args, "query");
+    const k = getNumberArg(tc.args, "k") ?? 10;
+    if (!query) {
+      result = { ok: false, error: "recall_fact requires a query." };
+    } else {
+      try {
+        const hits = await api.memorySearch(query, k);
+        if (!hits || hits.length === 0) {
+          result = { ok: true, message: "No matching memory." };
+        } else {
+          const lines = hits
+            .map(
+              (h) =>
+                `- ${h.entity.category} · ${h.entity.key}: ${h.entity.value}`,
+            )
+            .join("\n");
+          result = {
+            ok: true,
+            message: `**Memory matches:**\n${lines}`,
+          };
+        }
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    }
+  } else if (tc.tool === "forget_fact") {
+    const key = getStringArg(tc.args, "key");
+    if (!key) {
+      result = { ok: false, error: "forget_fact requires a key." };
+    } else {
+      try {
+        // Resolve key or alias to an id before deleting.
+        const all = await api.memoryListEntities();
+        const lc = key.toLowerCase();
+        const match = all.find(
+          (e) =>
+            e.key.toLowerCase() === lc ||
+            e.aliases.some((a) => a.toLowerCase() === lc),
+        );
+        if (!match) {
+          result = {
+            ok: false,
+            error: `No memory entry found for "${key}".`,
+          };
+        } else {
+          const confirmed =
+            typeof window !== "undefined" && typeof window.confirm === "function"
+              ? window.confirm(
+                  `Forget memory entry "${match.key}" (${match.value})? This cannot be undone.`,
+                )
+              : true;
+          if (!confirmed) {
+            result = {
+              ok: false,
+              error: `Cancelled: kept memory entry "${match.key}".`,
+            };
+          } else {
+            await api.memoryDeleteEntity(match.id);
+            result = {
+              ok: true,
+              message: `Forgot ${match.key}.`,
+            };
+          }
+        }
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    }
   } else {
     result = {
       ok: false,
