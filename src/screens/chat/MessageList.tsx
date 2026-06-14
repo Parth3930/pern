@@ -1,6 +1,7 @@
 import React from "react";
 import logo from "../../assets/logo.png";
-import { ChatMessage } from "../../lib/api";
+import { CheckCircle2, Database, Trash2 } from "lucide-react";
+import { ChatMessage, MemoryToolResult } from "../../lib/api";
 import { stripToolCalls } from "../chatLogic";
 
 interface MessageListProps {
@@ -36,6 +37,75 @@ const cleanUserMessageForDisplay = (content: string) => {
     }
   }
   return content;
+};
+
+const MemoryResultCard: React.FC<{ result: MemoryToolResult }> = ({ result }) => {
+  if (result.kind === "remember") {
+    return (
+      <div
+        className="memory-tool-pill memory-tool-pill--remember"
+        role="status"
+        title={`Saved to memory: ${result.key} = ${result.value}`}
+      >
+        <CheckCircle2 size={12} aria-hidden="true" />
+        <span>
+          Saved <code>{result.key}</code>
+        </span>
+        <span className="memory-tool-pill__category">{result.category}</span>
+      </div>
+    );
+  }
+  if (result.kind === "forget") {
+    return (
+      <div
+        className="memory-tool-pill memory-tool-pill--forget"
+        role="status"
+        title={`Forgot memory entry: ${result.key}`}
+      >
+        <Trash2 size={12} aria-hidden="true" />
+        <span>
+          Forgot <code>{result.key}</code>
+        </span>
+      </div>
+    );
+  }
+  // recall
+  return (
+    <div className="memory-tool-list" role="region" aria-label="Memory matches">
+      <div className="memory-tool-list__header">
+        <Database size={12} aria-hidden="true" />
+        <span>Memory matches for “{result.query}”</span>
+      </div>
+      {result.hits.length === 0 ? (
+        <div className="memory-tool-list__empty">No matching memory.</div>
+      ) : (
+        <ul className="memory-tool-list__items">
+          {result.hits.map((hit) => (
+            <li
+              key={hit.entity.id}
+              className="memory-tool-list__item"
+              title={`${hit.entity.category} · ${hit.entity.key}`}
+            >
+              <div className="memory-tool-list__item-head">
+                <span className="memory-tool-list__category">
+                  {hit.entity.category}
+                </span>
+                <span className="memory-tool-list__key">{hit.entity.key}</span>
+              </div>
+              <div className="memory-tool-list__value">
+                {hit.entity.value}
+              </div>
+              {hit.entity.aliases && hit.entity.aliases.length > 0 && (
+                <div className="memory-tool-list__aliases">
+                  aka {hit.entity.aliases.join(", ")}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 };
 
 export const MessageList: React.FC<MessageListProps> = ({
@@ -109,15 +179,25 @@ export const MessageList: React.FC<MessageListProps> = ({
               ? renderMessageContent(msg.content, isLastAssistantMsg)
               : null;
 
-          if (msg.role === "assistant" && !assistantContent) {
+          const hasMemoryResults =
+            msg.role === "assistant" &&
+            msg.memory_tool_results &&
+            msg.memory_tool_results.length > 0;
+
+          if (msg.role === "assistant" && !assistantContent && !hasMemoryResults) {
             return null;
           }
 
           return (
             <div key={i} className={`message ${msg.role}`}>
-              {msg.role === "assistant"
-                ? assistantContent
-                : cleanUserMessageForDisplay(msg.content)}
+              {msg.role === "assistant" ? assistantContent : cleanUserMessageForDisplay(msg.content)}
+              {hasMemoryResults && (
+                <div className="memory-tool-results">
+                  {msg.memory_tool_results!.map((m, idx) => (
+                    <MemoryResultCard key={idx} result={m} />
+                  ))}
+                </div>
+              )}
             </div>
           );
         })

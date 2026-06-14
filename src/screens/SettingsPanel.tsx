@@ -8,6 +8,7 @@ import EmailSettings from "../integrations/email/Settings";
 import DiscordSettings from "../integrations/discord/Settings";
 import CLIAgentSettings from "../integrations/cli_agents/Settings";
 import ProjectsSettings from "../integrations/projects/Settings";
+import MemorySettings from "../integrations/memory/Settings";
 import SkillsAndLearningSection from "../integrations/SkillsAndLearningPanel";
 import TodoPanel from "./TodoPanel";
 
@@ -337,6 +338,8 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
         <CLIAgentSettings />
 
         <ProjectsSettings />
+
+        <MemorySettings />
 
         <div
           className="settings-item"

@@ -434,6 +434,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
 
     setIsGenerating(true);
     const followUpMessages: ChatMessage[] = [];
+    const memoryResults: import("../../lib/api").MemoryToolResult[] = [];
     const context = {
       successfulWhatsAppRecipients: [] as string[],
       successfulWhatsAppMessageRef: { current: "" },
@@ -446,6 +447,9 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       try {
         const result = await executeSingleTool(tc, context);
 
+        if (result.memory_result) {
+          memoryResults.push(result.memory_result);
+        }
         followUpMessages.push({
           role: "assistant",
           content: "[TOOL_RESULT] " + buildToolReply(tc, result),
@@ -491,9 +495,18 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         nextMessages[lastAssIdx] = {
           ...nextMessages[lastAssIdx],
           content: nextMessages[lastAssIdx].content.trim() + "\n" + resultsText,
+          memory_tool_results:
+            memoryResults.length > 0 ? memoryResults : undefined,
         };
       } else {
-        nextMessages.push(...followUpMessages);
+        // No prior assistant message: splice tool results into the last
+        // followUp and attach the memory payload to it.
+        const followUpsWithMemory = followUpMessages.map((m, i) =>
+          i === 0 && memoryResults.length > 0
+            ? { ...m, memory_tool_results: memoryResults }
+            : m,
+        );
+        nextMessages.push(...followUpsWithMemory);
       }
       messagesRef.current = nextMessages;
       return nextMessages;

@@ -19,6 +19,12 @@ export interface ToolResult {
   resolved_name?: string;
   to?: string;
   guilds?: [string, string][];
+  /**
+   * Optional structured payload that the renderer can use to draw a
+   * tool-specific UI (currently only used for memory tools). The text reply
+   * stays in `message` so existing text rendering still works.
+   */
+  memory_result?: import("../lib/api").MemoryToolResult;
 }
 
 export interface ChatActionMemory {

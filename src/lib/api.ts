@@ -73,7 +73,32 @@ export interface PlatformInfo {
 export interface ChatMessage {
   role: string;
   content: string;
+  /**
+   * Optional structured payload attached to an assistant message so the
+   * renderer (MessageList) can show rich tool results — currently used for
+   * long-term memory remember/recall/forget. When present, the renderer
+   * paints a pill or list of cards next to the message body; the textual
+   * `content` still contains the human-readable description.
+   */
+  memory_tool_results?: MemoryToolResult[];
 }
+
+export type MemoryToolResult =
+  | {
+      kind: "remember";
+      key: string;
+      value: string;
+      category: string;
+    }
+  | {
+      kind: "forget";
+      key: string;
+    }
+  | {
+      kind: "recall";
+      query: string;
+      hits: SearchHit[];
+    };
 
 export interface Skill {
   name: string;

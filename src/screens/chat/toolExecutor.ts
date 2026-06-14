@@ -484,6 +484,12 @@ export async function executeSingleTool(
         result = {
           ok: true,
           message: `Saved ${entity.key} to memory.`,
+          memory_result: {
+            kind: "remember",
+            key: entity.key,
+            value: entity.value,
+            category: entity.category,
+          },
         };
       } catch (e) {
         result = { ok: false, error: getErrorMessage(e) };
@@ -509,6 +515,7 @@ export async function executeSingleTool(
           result = {
             ok: true,
             message: `**Memory matches:**\n${lines}`,
+            memory_result: { kind: "recall", query, hits },
           };
         }
       } catch (e) {
@@ -551,6 +558,7 @@ export async function executeSingleTool(
             result = {
               ok: true,
               message: `Forgot ${match.key}.`,
+              memory_result: { kind: "forget", key: match.key },
             };
           }
         }
