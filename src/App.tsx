@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import "./App.css";
 import { api, AppConfig } from "./lib/api";
 import Onboarding from "./screens/Onboarding";
-import Chat from "./screens/chat";
+import Chat from "./screens/chat/Chat";
 import SettingsPanel from "./screens/SettingsPanel";
 import TodoPanel from "./screens/TodoPanel";
 import { getCurrentWindow } from "@tauri-apps/api/window";
