@@ -138,6 +138,22 @@ async fn execute_action(
             // so the future size is fixed.
             Box::pin(exec_run_automation(id, state, manager, ancestors)).await
         }
+        // Skip-with-warning: this build doesn't recognize the action
+        // variant. Per the spec: log a warning, mark the action as
+        // `ok = true` (it didn't fail — we just chose not to run it),
+        // and let the rest of the automation continue.
+        Action::Unknown => {
+            eprintln!(
+                "[AUTOMATIONS] Skipping unsupported action variant (this build doesn't implement it). The rest of the automation will continue normally."
+            );
+            ActionResult {
+                index: 0,
+                ok: true,
+                message:
+                    "Skipped unsupported action variant (this server build doesn't implement it)"
+                        .to_string(),
+            }
+        }
     }
 }
 

@@ -240,6 +240,18 @@ impl Default for AutomationManager {
 }
 
 #[cfg(test)]
+impl AutomationManager {
+    /// Test-only accessor that returns a guard over the in-memory store
+    /// so unit tests can inject automations without going through the
+    /// on-disk JSON file. Do NOT call this from production code.
+    pub async fn store_handle_for_tests(
+        &self,
+    ) -> tokio::sync::MutexGuard<'_, AutomationStore> {
+        self.store.lock().await
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::automations::Trigger;

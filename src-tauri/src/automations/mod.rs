@@ -111,6 +111,14 @@ pub enum Action {
     /// Compose — fire another automation by id. Cycles are detected at run-time
     /// by the executor and rejected.
     RunAutomation { id: String },
+    /// Catch-all for action variants this server build does not yet
+    /// recognize (e.g. a newer client wrote a future action type). The
+    /// executor logs a warning and skips; the rest of the automation
+    /// runs normally. This satisfies the spec's "Skip unsupported
+    /// actions with a logged warning, don't fail the whole automation"
+    /// rule.
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

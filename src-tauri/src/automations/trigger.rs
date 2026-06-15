@@ -114,10 +114,6 @@ pub fn cron_matches(expr: &str, now_unix: i64) -> bool {
         Weekday::Fri => 5,
         Weekday::Sat => 6,
     };
-    eprintln!(
-        "cron_matches expr={:?} minute={} hour={} dom={} month={} dow={}",
-        expr, minute, hour, dom, month, dow
-    );
 
     let minute_ok = field_matches(fields[0], minute, 0, 59);
     let hour_ok = field_matches(fields[1], hour, 0, 23);
@@ -141,6 +137,23 @@ pub fn cron_matches(expr: &str, now_unix: i64) -> bool {
         (false, true) => dom_ok,
         (false, false) => dom_ok || dow_ok,
     }
+}
+
+/// Compute the `(automation_id, trigger_window_start)` dedupe key for a
+/// trigger at the given instant. Two instants produce the *same* key iff
+/// the caller has already seen the automation fire in the same trigger
+/// window. This is the function the scheduler uses to skip
+/// already-fired automations — see `scheduler::tick`.
+///
+/// For triggers that have no meaningful window (or are explicit "fire
+/// once" markers), the key is `start_time_unix`, so multiple ticks inside
+/// the same process all see the same key and only the first one wins.
+pub fn trigger_window_start(
+    trigger: &Trigger,
+    now_unix: i64,
+    start_time_unix: i64,
+) -> Option<i64> {
+    evaluate_trigger_window(trigger, now_unix, start_time_unix)
 }
 
 /// Does a single cron field match the given value? Supports `*`, literals,

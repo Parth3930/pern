@@ -214,7 +214,7 @@ pub fn run() {
                         "Pern",
                         "/f",
                     ])
-                    .status();
+                    .output();
             }
 
             // Auto-start WhatsApp session if it was previously enabled
