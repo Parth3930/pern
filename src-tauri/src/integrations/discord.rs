@@ -93,6 +93,25 @@ async fn get_discord_token(state: &AppState) -> Result<String, String> {
     Ok(config.discord_token.clone())
 }
 
+pub fn sanitize_user_id(id: &str) -> String {
+    let trimmed = id.trim();
+    if trimmed.starts_with("<@") && trimmed.ends_with('>') {
+        let start = if trimmed.starts_with("<@!") || trimmed.starts_with("<@&") {
+            3
+        } else {
+            2
+        };
+        if trimmed.len() > start + 1 {
+            return trimmed[start..trimmed.len() - 1].to_string();
+        }
+    }
+    let clean = trimmed.trim_start_matches('@');
+    if clean.chars().all(|c| c.is_ascii_digit()) && !clean.is_empty() {
+        return clean.to_string();
+    }
+    trimmed.to_string()
+}
+
 pub async fn stop_discord_runtime(state: &AppState) {
     let mut task_guard = state.discord_manager.runtime_task.lock().await;
     if let Some(task) = task_guard.take() {
@@ -1922,7 +1941,8 @@ pub async fn do_discord_kick(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/members/{}", guild_id, user_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/members/{}", guild_id, clean_user_id);
     discord_api_call(
         reqwest::Method::DELETE,
         &endpoint,
@@ -1952,7 +1972,8 @@ pub async fn do_discord_ban(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/bans/{}", guild_id, user_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/bans/{}", guild_id, clean_user_id);
     let body = delete_message_seconds.map(|secs| {
         serde_json::json!({
             "delete_message_seconds": secs
@@ -1993,7 +2014,8 @@ pub async fn do_discord_unban(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/bans/{}", guild_id, user_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/bans/{}", guild_id, clean_user_id);
     discord_api_call(reqwest::Method::DELETE, &endpoint, None, &token, None).await?;
     Ok(())
 }
@@ -2015,7 +2037,8 @@ pub async fn do_discord_mute(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/members/{}", guild_id, user_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/members/{}", guild_id, clean_user_id);
     let now = chrono::Utc::now();
     let until = now + chrono::Duration::minutes(duration_mins as i64);
     let until_iso = until.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
@@ -2052,7 +2075,8 @@ pub async fn do_discord_unmute(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/members/{}", guild_id, user_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/members/{}", guild_id, clean_user_id);
 
     let body = serde_json::json!({
         "communication_disabled_until": serde_json::Value::Null
@@ -2078,6 +2102,7 @@ pub async fn do_discord_warn(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
+    let clean_user_id = sanitize_user_id(&user_id);
 
     let mut guild_info = String::new();
     if let Some(g_id) = guild_id {
@@ -2099,7 +2124,7 @@ pub async fn do_discord_warn(
     let dm_channel_resp = discord_api_call(
         reqwest::Method::POST,
         "/users/@me/channels",
-        Some(serde_json::json!({ "recipient_id": user_id })),
+        Some(serde_json::json!({ "recipient_id": clean_user_id })),
         &token,
         None,
     )
@@ -2222,7 +2247,8 @@ pub async fn do_discord_assign_role(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, user_id, role_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, clean_user_id, role_id);
     discord_api_call(reqwest::Method::PUT, &endpoint, None, &token, None).await?;
     Ok(())
 }
@@ -2244,7 +2270,8 @@ pub async fn do_discord_remove_role(
     state: &AppState,
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
-    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, user_id, role_id);
+    let clean_user_id = sanitize_user_id(&user_id);
+    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, clean_user_id, role_id);
     discord_api_call(reqwest::Method::DELETE, &endpoint, None, &token, None).await?;
     Ok(())
 }
@@ -2265,12 +2292,13 @@ pub async fn do_discord_send_dm(
     state: &AppState,
 ) -> Result<String, String> {
     let token = get_discord_token(state).await?;
+    let clean_user_id = sanitize_user_id(&user_id);
 
     // Create a DM channel with the recipient
     let dm_channel_resp = discord_api_call(
         reqwest::Method::POST,
         "/users/@me/channels",
-        Some(serde_json::json!({ "recipient_id": user_id })),
+        Some(serde_json::json!({ "recipient_id": clean_user_id })),
         &token,
         None,
     )
@@ -2581,8 +2609,9 @@ async fn record_behaviour_interaction(
 
 /// Get a formatted behaviour analysis for a specific user by asking the AI.
 async fn get_user_behaviour_analysis(user_id: &str) -> String {
+    let clean_user_id = sanitize_user_id(user_id);
     let stats = DiscordUserStats::load();
-    let entry = match stats.get_user(user_id) {
+    let entry = match stats.get_user(&clean_user_id) {
         Some(e) => e,
         None => {
             return format!("I haven't interacted with user `{}` yet, so I don't have any behaviour data on them.", user_id);
@@ -2710,4 +2739,21 @@ pub async fn send_discord_reply_outside(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sanitize_user_id() {
+        assert_eq!(sanitize_user_id("<@123456789>"), "123456789");
+        assert_eq!(sanitize_user_id("<@!123456789>"), "123456789");
+        assert_eq!(sanitize_user_id("<@&123456789>"), "123456789");
+        assert_eq!(sanitize_user_id("@123456789"), "123456789");
+        assert_eq!(sanitize_user_id("123456789"), "123456789");
+        assert_eq!(sanitize_user_id("Gabbar"), "Gabbar");
+        assert_eq!(sanitize_user_id("<@>"), "<@>");
+        assert_eq!(sanitize_user_id("   <@12345>   "), "12345");
+    }
 }

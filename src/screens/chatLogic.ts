@@ -89,6 +89,35 @@ function extractPromptFromUserMessage(userMessage: string): string | null {
   return null;
 }
 
+function isAppNameMentioned(userMessage: string, appName: string): boolean {
+  const lowerMsg = userMessage.toLowerCase();
+  const lowerApp = appName.toLowerCase();
+
+  if (lowerMsg.includes(lowerApp)) {
+    return true;
+  }
+
+  const msgTokens = lowerMsg.split(/[^a-z0-9]+/).filter(Boolean);
+  const appTokens = lowerApp.split(/[^a-z0-9]+/).filter(Boolean);
+
+  if (appTokens.length === 0) return false;
+
+  const msgCleaned = msgTokens.join("");
+  const appCleaned = appTokens.join("");
+
+  if (msgCleaned.includes(appCleaned)) {
+    return true;
+  }
+
+  for (const token of appTokens) {
+    if (token.length >= 3 && msgCleaned.includes(token)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function extractToolCalls(content: string, userMessage?: string): ToolCall[] {
   const parsed = parsePlanToToolCalls(content, "");
   const toolCalls: ToolCall[] = [];
@@ -99,6 +128,36 @@ export function extractToolCalls(content: string, userMessage?: string): ToolCal
     if (!isToolName(call.tool)) {
       console.warn(`[CHAT] Ignoring hallucinated tool "${call.tool}" - not a known tool.`);
       continue;
+    }
+
+    // Validate that the tool execution was actually requested by the user,
+    // protecting against small LLM few-shot hallucinations.
+    if (userMessage) {
+      if (call.tool === "close_app" || call.tool === "launch_app") {
+        const appName = typeof call.args.app_name === "string" ? call.args.app_name : "";
+        const hasAppReference = /\b(both|them|it|all|app|apps|program|application|window|windows|process|browser|editor|terminal|console|client|tool|task|utility|software|ide|player|tab|tabs|page|pages)\b/i.test(userMessage);
+
+        if (appName && !isAppNameMentioned(userMessage, appName) && !hasAppReference) {
+          console.warn(`[CHAT] Filtering out hallucinated tool call: ${call.tool}(app_name="${appName}")`);
+          continue;
+        }
+      }
+
+      if (call.tool === "shutdown_system") {
+        const hasShutdownKeywords = /\b(shutdown|shut\s*down|turn\s*off|power\s*off|poweroff|sleep)\b/i.test(userMessage);
+        if (!hasShutdownKeywords) {
+          console.warn(`[CHAT] Filtering out hallucinated shutdown call.`);
+          continue;
+        }
+      }
+
+      if (call.tool === "restart_system") {
+        const hasRestartKeywords = /\b(restart|reboot)\b/i.test(userMessage);
+        if (!hasRestartKeywords) {
+          console.warn(`[CHAT] Filtering out hallucinated restart call.`);
+          continue;
+        }
+      }
     }
 
     // Post-process to correct hallucinated example prompts from small models
