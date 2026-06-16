@@ -134,42 +134,34 @@ async fn send_chat_message(
     println!("[CHAT][DIAG] Response received, status={}, starting SSE stream", res.status());
     let mut stream = res.bytes_stream();
     let mut buffer = Vec::new();
-    let mut chunk_count: u32 = 0;
-    let mut total_bytes: usize = 0;
+    let mut done = false;
 
     while let Some(chunk_res) = stream.next().await {
+        if done {
+            break;
+        }
         match chunk_res {
             Ok(chunk) => {
                 buffer.extend_from_slice(&chunk);
-                chunk_count += 1;
-                total_bytes += chunk.len();
 
-                // Process SSE format
-                let mut unparsed = Vec::new();
-                let buffer_str = String::from_utf8_lossy(&buffer);
-
-                for line in buffer_str.lines() {
-                    let line = line.trim();
-                    if line.starts_with("data: ") {
+                // parse only complete lines using rposition, keep rest in buffer
+                if let Some(pos) = buffer.iter().rposition(|&b| b == b'\n') {
+                    let (ready, rest) = buffer.split_at(pos + 1);
+                    let ready_str = String::from_utf8_lossy(ready);
+                    for line in ready_str.lines().map(|l| l.trim()).filter(|l| l.starts_with("data: ")) {
                         let data = &line[6..];
                         if data == "[DONE]" {
-                            println!("[CHAT][DIAG] Stream DONE: chunks={}, total_bytes={}", chunk_count, total_bytes);
+                            done = true;
                             break;
                         }
-                        if let Ok(response) = serde_json::from_str::<OpenAIStreamChunk>(data) {
-                            if let Some(choice) = response.choices.first() {
-                                if let Some(content) = &choice.delta.content {
-                                    let _ = window.emit("chat-token", content.clone());
-                                }
+                        if let Ok(res) = serde_json::from_str::<OpenAIStreamChunk>(data) {
+                            if let Some(content) = res.choices.first().and_then(|c| c.delta.content.as_ref()) {
+                                let _ = window.emit("chat-token", content);
                             }
                         }
-                    } else if !line.is_empty() {
-                        // Keep incomplete lines for the next chunk
-                        unparsed.extend_from_slice(line.as_bytes());
-                        unparsed.push(b'\n');
                     }
+                    buffer = rest.to_vec();
                 }
-                buffer = unparsed;
             }
             Err(e) => {
                 println!("[CHAT] Stream error: {}", e);
