@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api, AppConfig, ChatMessage, UserMemory } from "../../lib/api";
 import { useSpeech } from "../../lib/speech";
-import { showNotification } from "../../lib/notifications";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { MessageList } from "./MessageList";
 import { ChatInput } from "./ChatInput";
 import { executeSingleTool } from "./toolExecutor";
+import { useChatServer } from "./hooks/useChatServer";
+import { useCLIAgentEvents } from "./hooks/useCLIAgentEvents";
+import { useExternalRequests } from "./hooks/useExternalRequests";
+import { useTodoReminders } from "./hooks/useTodoReminders";
 
 interface Props {
   config: AppConfig;
@@ -106,50 +107,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     return null;
   };
 
-  const formatCLIAgentOutput = (output: string, label: string): string => {
-    const trimmed = output.trim();
-    if (!trimmed) {
-      return "";
-    }
 
-    const clipped =
-      trimmed.length > 800 ? `${trimmed.slice(0, 800)}...` : trimmed;
-    const quoted = clipped
-      .split("\n")
-      .map((line) => `> ${line}`)
-      .join("\n");
-    return `\n\n**${label}:**\n${quoted}`;
-  };
-
-  useEffect(() => {
-    let unsubCLIAgent: (() => void) | undefined;
-    const setup = async () => {
-      unsubCLIAgent = await api.onCLIAgentComplete((data) => {
-        console.log("[CHAT] CLI agent completion received:", data);
-        const outputLabel =
-          data.status === "completed" ? "Output" : "Error output";
-        const outputBlock = formatCLIAgentOutput(data.output, outputLabel);
-        const emoji = data.status === "completed" ? "✅" : "❌";
-        let summaryPart = "";
-        if (data.summary) {
-          summaryPart = `\n\n### Summary of changes:\n${data.summary}`;
-        }
-        const msg: ChatMessage = {
-          role: "assistant",
-          content: `${emoji} **${data.agent}** ${data.status === "completed" ? "completed" : "failed"}: "${data.task.slice(0, 100)}"${summaryPart}${outputBlock}`,
-        };
-        setMessages((prev) => {
-          const next = [...prev, msg];
-          messagesRef.current = next;
-          return next;
-        });
-      });
-    };
-    setup();
-    return () => {
-      if (unsubCLIAgent) unsubCLIAgent();
-    };
-  }, []);
 
   useEffect(() => {
     const loadMemory = async () => {
@@ -170,43 +128,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       }
     };
     loadMemory();
-
-    const initServer = async () => {
-      try {
-        console.log("[SERVER] Checking llama server health...");
-        const isHealthy = await api.llamaServerHealth();
-        console.log("[SERVER] Health check result:", isHealthy);
-        if (!isHealthy) {
-          console.log(
-            "[SERVER] Starting local AI server for model:",
-            config.selected_model,
-          );
-          await api.startLlamaServer(config.selected_model);
-          console.log("[SERVER] Local AI server started.");
-        } else {
-          console.log("[SERVER] Server already healthy.");
-        }
-      } catch (e) {
-        console.error("[SERVER] Failed to start local AI server:", e);
-        try {
-          const installed = await api.checkLlamaInstalled();
-          if (!installed) {
-            console.log(
-              "[SERVER] Local AI installation is broken/incomplete. Redirecting to onboarding...",
-            );
-            await api.setFirstRunCompleted(false);
-            onConfigUpdate?.();
-          }
-        } catch (err) {
-          console.error(
-            "[SERVER] Failed to verify installation after crash:",
-            err,
-          );
-        }
-      }
-    };
-    initServer();
-  }, [config.selected_model]);
+  }, []);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -522,119 +444,6 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     }
   };
 
-  useEffect(() => {
-    let active = true;
-    let unsubExternal: (() => void) | undefined;
-
-    const setupExternalListener = async () => {
-      const u = await listen<{
-        request_id: string;
-        platform: string;
-        contact_name: string;
-        user_message: string;
-        is_owner: boolean;
-      }>("request-external-reply", async (event) => {
-        if (!active) return;
-        const { request_id, platform, contact_name, user_message, is_owner } = event.payload;
-
-        console.log(`[EXTERNAL_REQUEST] Received request ${request_id} from ${platform} (sender: ${contact_name}, is_owner: ${is_owner})`);
-
-        try {
-          const latestIntent = is_owner ? detectActionIntent(user_message) : "chat";
-
-          let relevantSkills: import("../../lib/api").Skill[] = [];
-          try {
-            relevantSkills = await api.findRelevantSkills(user_message);
-          } catch (_) {}
-
-          const tempMessages: ChatMessage[] = [{ role: "user", content: user_message }];
-
-          const historyResult = buildConversationHistory(
-            tempMessages,
-            userMemoryRef.current,
-            latestIntent,
-            undefined,
-            {},
-            relevantSkills.length > 0 ? relevantSkills : undefined,
-            configRef.current.whatsapp_contacts,
-          );
-
-          const response = await fetch("http://127.0.0.1:4891/v1/chat/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: "local",
-              messages: historyResult.messages,
-              temperature: 0.7,
-              stream: false,
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Server returned status ${response.status}`);
-          }
-
-          const data = await response.json();
-          const rawReply = data.choices?.[0]?.message?.content || "";
-          console.log("[EXTERNAL_REQUEST] Raw reply:", rawReply);
-
-          const toolCalls = latestIntent === "action" ? extractToolCalls(rawReply, user_message) : [];
-
-          let finalReply = "";
-
-          if (toolCalls.length > 0) {
-            console.log("[EXTERNAL_REQUEST] Action intent + tools found → executing tools");
-            const toolResults: string[] = [];
-            const context = {
-              successfulWhatsAppRecipients: [] as string[],
-              successfulWhatsAppMessageRef: { current: "" },
-              needsConfigRefreshRef: { current: false },
-            };
-
-            for (const tc of toolCalls) {
-              try {
-                const res = await executeSingleTool(tc, context);
-                toolResults.push(buildToolReply(tc, res));
-              } catch (err) {
-                toolResults.push(`Error executing ${tc.tool}: ${err}`);
-              }
-            }
-
-            if (context.needsConfigRefreshRef.current && onConfigUpdateRef.current) {
-              try {
-                await onConfigUpdateRef.current();
-              } catch {}
-            }
-
-            finalReply = toolResults.join("\n");
-          } else {
-            finalReply = stripToolCalls(rawReply).trim();
-          }
-
-          await invoke("submit_external_reply", { requestId: request_id, reply: finalReply });
-        } catch (err) {
-          console.error("[EXTERNAL_REQUEST] Failed to process request:", err);
-          try {
-            await invoke("submit_external_reply", {
-              requestId: request_id,
-              reply: "Sorry, I encountered an error while processing that request.",
-            });
-          } catch (invokeErr) {
-            console.error("[EXTERNAL_REQUEST] Failed to submit error reply:", invokeErr);
-          }
-        }
-      });
-      unsubExternal = u;
-    };
-
-    setupExternalListener();
-
-    return () => {
-      active = false;
-      if (unsubExternal) unsubExternal();
-    };
-  }, []);
-
   const handleSend = async (overrideInput?: string) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
     if (!textToSend.trim() || isGenerating) return;
@@ -778,6 +587,10 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   const lastSpokenRef = useRef<string | null>(null);
   const isVoiceSessionRef = useRef<boolean>(false);
 
+  useChatServer(config, onConfigUpdate);
+  useCLIAgentEvents(setMessages, messagesRef);
+  useExternalRequests(userMemoryRef, configRef, onConfigUpdateRef);
+
   const handleVoiceCommand = useCallback((command: string) => {
     handleSend(command);
   }, []);
@@ -792,6 +605,8 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   } = useSpeech({
     onCommandDetected: handleVoiceCommand,
   });
+
+  useTodoReminders(speak);
 
   useEffect(() => {
     if (!isGenerating && messages.length > 0) {
@@ -808,66 +623,6 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     }
   }, [isGenerating, messages, speak]);
 
-  useEffect(() => {
-    const syncTodos = async () => {
-      try {
-        const diskTodos = await api.getTodos();
-        if (diskTodos) {
-          localStorage.setItem("pern_todos", JSON.stringify(diskTodos));
-          window.dispatchEvent(new Event("pern_todos_updated"));
-        }
-      } catch (err) {
-        console.error("Failed to sync todos from disk on startup:", err);
-      }
-    };
-    syncTodos();
-  }, []);
-
-  useEffect(() => {
-    const checkTodos = () => {
-      try {
-        const storedTodos = localStorage.getItem("pern_todos");
-        if (!storedTodos) return;
-        const todos = JSON.parse(storedTodos);
-        let updated = false;
-
-        const now = new Date();
-
-        const updatedTodos = todos.map((todo: any) => {
-          if (!todo.completed && !todo.reminded && todo.time) {
-            const reminderTime = new Date(todo.time);
-            if (reminderTime <= now) {
-              speak(`Excuse me, this is a reminder for your task: ${todo.text}`);
-              showNotification("Todo Reminder", todo.text);
-
-              if (todo.repeat_hours && todo.repeat_hours > 0) {
-                const nextTime = new Date(reminderTime.getTime() + todo.repeat_hours * 60 * 60 * 1000);
-                todo.time = nextTime.toISOString();
-                todo.reminded = false;
-              } else {
-                todo.reminded = true;
-              }
-              updated = true;
-            }
-          }
-          return todo;
-        });
-
-        if (updated) {
-          localStorage.setItem("pern_todos", JSON.stringify(updatedTodos));
-          api.saveTodos(updatedTodos).catch((err) => {
-            console.error("Failed to save updated todos to disk in background checker:", err);
-          });
-          window.dispatchEvent(new Event("pern_todos_updated"));
-        }
-      } catch (err) {
-        console.error("Error checking todo reminders:", err);
-      }
-    };
-
-    const interval = setInterval(checkTodos, 5000);
-    return () => clearInterval(interval);
-  }, [speak]);
 
   return (
     <div className="chat-main">
