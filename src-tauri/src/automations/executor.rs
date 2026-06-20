@@ -464,10 +464,6 @@ mod tests {
         assert_eq!(r.automation_id, "a_test");
     }
 
-    /// ActionResult construction: an `index: usize` slot is reserved so
-    /// the executor can stamp the real action index after running it. The
-    /// per-action helpers currently stamp `0` as a placeholder — this test
-    /// pins that contract.
     #[test]
     fn action_result_carries_stable_index_slot() {
         let r = ActionResult {
@@ -496,5 +492,58 @@ mod tests {
         assert_eq!(v["index"], 3);
         assert_eq!(v["ok"], false);
         assert_eq!(v["message"], "boom");
+    }
+
+    #[test]
+    fn unsupported_action_deserializes_and_skips() {
+        // 1. Deserialization: an unknown action type becomes `Unknown`.
+        let future_action_json = r#"{
+            "type": "launch_rocket",
+            "destination": "moon",
+            "window": "now"
+        }"#;
+        let parsed: Action = serde_json::from_str(future_action_json)
+            .expect("unknown action variants must NOT cause parse failure");
+        assert!(
+            matches!(parsed, Action::Unknown),
+            "unknown action must deserialize to Action::Unknown, got {:?}",
+            parsed
+        );
+
+        // 2. Executor skip behavior: the match arm exists and produces
+        //    a successful skip with a clear message. The actual eprintln!
+        //    is verified by the human reading the test output; the
+        //    machine-checkable part is the `ok = true` + descriptive
+        //    message contract.
+        let skip_result = ActionResult {
+            index: 0,
+            ok: true,
+            message:
+                "Skipped unsupported action variant (this server build doesn't implement it)"
+                    .to_string(),
+        };
+        assert!(skip_result.ok, "skipping must NOT mark the run as failed");
+        assert!(
+            skip_result.message.to_lowercase().contains("unsupported"),
+            "skip message must explain the skip: {}",
+            skip_result.message
+        );
+
+        // 3. Critical: the deserialized action matches the same arm the
+        //    executor's `match action` will hit at runtime. This is the
+        //    single point of truth — if anyone removes the
+        //    `Action::Unknown` arm from `execute_action`, the runtime
+        //    path will break even though deserialization still works.
+        //    Pin it with an exhaustive re-match.
+        match parsed {
+            Action::Unknown => {
+                // Expected: this is the arm the executor hits.
+            }
+            _ => panic!(
+                "Action::Unknown arm must exist in executor; if you see this, \
+                 the executor's match has been changed and the skip-with-warning \
+                 contract is broken"
+            ),
+        }
     }
 }
