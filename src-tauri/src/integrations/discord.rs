@@ -1,4 +1,3 @@
-
 use crate::state::AppState;
 use crate::storage::save_config;
 use futures_util::{SinkExt, StreamExt};
@@ -150,10 +149,13 @@ pub async fn internal_start_discord_session(
     let app_handle_clone_inner = app_handle.clone();
 
     let runtime_handle = tauri::async_runtime::spawn(async move {
-        let _ = app_handle_clone_inner.emit("app-log", serde_json::json!({
-            "level": "debug",
-            "message": "[DISCORD] Starting gateway session..."
-        }));
+        let _ = app_handle_clone_inner.emit(
+            "app-log",
+            serde_json::json!({
+                "level": "debug",
+                "message": "[DISCORD] Starting gateway session..."
+            }),
+        );
 
         if let Err(e) = run_gateway_loop(
             app_handle_clone_inner,
@@ -191,10 +193,13 @@ async fn run_gateway_loop(
     let (ws_stream, _) = connect_async(url)
         .await
         .map_err(|e| format!("Failed to connect to Discord gateway: {}", e))?;
-    let _ = app_handle.emit("app-log", serde_json::json!({
-        "level": "debug",
-        "message": "[DISCORD] Connected to Gateway WebSocket."
-    }));
+    let _ = app_handle.emit(
+        "app-log",
+        serde_json::json!({
+            "level": "debug",
+            "message": "[DISCORD] Connected to Gateway WebSocket."
+        }),
+    );
 
     let (mut write, mut read) = ws_stream.split();
 
@@ -219,7 +224,8 @@ async fn run_gateway_loop(
         "message": format!("[DISCORD] Hello received. Heartbeat interval: {}ms", heartbeat_interval)
     }));
 
-    let mut heartbeat_interval_timer = tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
+    let mut heartbeat_interval_timer =
+        tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
     heartbeat_interval_timer.tick().await; // First tick immediate
 
     let presence_json = if activity_text.is_empty() {
@@ -260,10 +266,13 @@ async fn run_gateway_loop(
         .send(identify_msg)
         .await
         .map_err(|e| format!("Failed to send Identify: {}", e))?;
-    let _ = app_handle.emit("app-log", serde_json::json!({
-        "level": "debug",
-        "message": "[DISCORD] Identify sent."
-    }));
+    let _ = app_handle.emit(
+        "app-log",
+        serde_json::json!({
+            "level": "debug",
+            "message": "[DISCORD] Identify sent."
+        }),
+    );
 
     let last_sequence = Arc::new(tokio::sync::Mutex::new(None::<u64>));
     let last_seq_clone = last_sequence.clone();
@@ -346,10 +355,13 @@ fn handle_event<'a>(
 
         match event_type {
             "READY" => {
-                let _ = app_handle.emit("app-log", serde_json::json!({
-                    "level": "debug",
-                    "message": "[DISCORD] READY event received."
-                }));
+                let _ = app_handle.emit(
+                    "app-log",
+                    serde_json::json!({
+                        "level": "debug",
+                        "message": "[DISCORD] READY event received."
+                    }),
+                );
                 let mut name_out = String::new();
                 if let Some(user) = data.get("user") {
                     if let Some(username) = user.get("username").and_then(|u| u.as_str()) {
@@ -364,10 +376,13 @@ fn handle_event<'a>(
                         };
                         *manager.bot_name.lock().await = Some(name.clone());
                         name_out = name;
-                        let _ = app_handle.emit("app-log", serde_json::json!({
-                            "level": "info",
-                            "message": format!("[DISCORD] Logged in as: {}", name_out)
-                        }));
+                        let _ = app_handle.emit(
+                            "app-log",
+                            serde_json::json!({
+                                "level": "info",
+                                "message": format!("[DISCORD] Logged in as: {}", name_out)
+                            }),
+                        );
                     }
                     if let Some(id) = user.get("id").and_then(|id| id.as_str()) {
                         *manager.bot_id.lock().await = Some(id.to_string());
@@ -385,10 +400,13 @@ fn handle_event<'a>(
                         let mut guilds = manager.guilds.lock().await;
                         guilds.retain(|(g_id, _)| g_id != id);
                         guilds.push((id.to_string(), name.to_string()));
-                        let _ = app_handle.emit("app-log", serde_json::json!({
-                            "level": "debug",
-                            "message": format!("[DISCORD] Registered guild: {} ({})", name, id)
-                        }));
+                        let _ = app_handle.emit(
+                            "app-log",
+                            serde_json::json!({
+                                "level": "debug",
+                                "message": format!("[DISCORD] Registered guild: {} ({})", name, id)
+                            }),
+                        );
                     }
                 }
             }
@@ -528,89 +546,115 @@ fn handle_event<'a>(
                                 config.discord_behaviour_channel_id.clone()
                             };
 
-                             if is_owner {
-                                 println!("[DISCORD] Owner message/mention detected: {}", content);
-                                 tauri::async_runtime::spawn(async move {
-                                     let reply = generate_discord_action(
-                                         &app_handle_clone,
-                                         &state_clone,
-                                         user_msg,
-                                         &author_name,
-                                         &guild_id,
-                                     )
-                                     .await;
+                            if is_owner {
+                                println!("[DISCORD] Owner message/mention detected: {}", content);
+                                tauri::async_runtime::spawn(async move {
+                                    let reply = generate_discord_action(
+                                        &app_handle_clone,
+                                        &state_clone,
+                                        user_msg,
+                                        &author_name,
+                                        &guild_id,
+                                    )
+                                    .await;
 
-                                     let use_embed = reply.contains("**CLI Agent Status:**")
-                                         || reply.contains("Here are the channels in this server:")
-                                         || reply.contains("System Status:")
-                                         || reply.len() > 1000;
+                                    let use_embed = reply.contains("**CLI Agent Status:**")
+                                        || reply.contains("Here are the channels in this server:")
+                                        || reply.contains("System Status:")
+                                        || reply.len() > 1000;
 
-                                     let body = if use_embed {
-                                         serde_json::json!({
-                                             "embeds": [{
-                                                 "color": 0x5865F2,
-                                                 "description": reply,
-                                                 "footer": { "text": "Pern AI" }
-                                             }],
-                                             "message_reference": {
-                                                 "message_id": message_id
-                                             }
-                                         })
-                                     } else {
-                                         serde_json::json!({
-                                             "content": reply,
-                                             "message_reference": {
-                                                 "message_id": message_id
-                                             }
-                                         })
-                                     };
+                                    let body = if use_embed {
+                                        serde_json::json!({
+                                            "embeds": [{
+                                                "color": 0x5865F2,
+                                                "description": reply,
+                                                "footer": { "text": "Pern AI" }
+                                            }],
+                                            "message_reference": {
+                                                "message_id": message_id
+                                            }
+                                        })
+                                    } else {
+                                        serde_json::json!({
+                                            "content": reply,
+                                            "message_reference": {
+                                                "message_id": message_id
+                                            }
+                                        })
+                                    };
 
-                                     let _ = discord_api_call(
-                                         reqwest::Method::POST,
-                                         &format!("/channels/{}/messages", channel_id),
-                                         Some(body),
-                                         &token,
-                                         None,
-                                     )
-                                     .await;
+                                    let _ = discord_api_call(
+                                        reqwest::Method::POST,
+                                        &format!("/channels/{}/messages", channel_id),
+                                        Some(body),
+                                        &token,
+                                        None,
+                                    )
+                                    .await;
 
-                                     // Log behaviour
-                                     let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                     send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Action").await;
-                                 });
-                             } else {
-                                 println!(
-                                     "[DISCORD] Chat mention detected from non-owner {}: {}",
-                                     author_name, content
-                                 );
-                                 tauri::async_runtime::spawn(async move {
-                                     let reply = generate_discord_reply(
-                                         &app_handle_clone,
-                                         &state_clone,
-                                         user_msg,
-                                         &author_name,
-                                     )
-                                     .await;
-                                     let body = serde_json::json!({
-                                         "content": reply,
-                                         "message_reference": {
-                                             "message_id": message_id
-                                         }
-                                     });
-                                     let _ = discord_api_call(
-                                         reqwest::Method::POST,
-                                         &format!("/channels/{}/messages", channel_id),
-                                         Some(body),
-                                         &token,
-                                         None,
-                                     )
-                                     .await;
+                                    // Log behaviour
+                                    let _ = record_behaviour_interaction(
+                                        &author_id_clone,
+                                        &author_name,
+                                        &message_snippet,
+                                    )
+                                    .await;
+                                    send_behaviour_log(
+                                        &token,
+                                        &behaviour_channel_id,
+                                        &author_name,
+                                        &author_id_clone,
+                                        &message_snippet,
+                                        "Action",
+                                    )
+                                    .await;
+                                });
+                            } else {
+                                println!(
+                                    "[DISCORD] Chat mention detected from non-owner {}: {}",
+                                    author_name, content
+                                );
+                                tauri::async_runtime::spawn(async move {
+                                    let reply = generate_discord_reply(
+                                        &app_handle_clone,
+                                        &state_clone,
+                                        user_msg,
+                                        &author_name,
+                                    )
+                                    .await;
+                                    let body = serde_json::json!({
+                                        "content": reply,
+                                        "message_reference": {
+                                            "message_id": message_id
+                                        }
+                                    });
+                                    let _ = discord_api_call(
+                                        reqwest::Method::POST,
+                                        &format!("/channels/{}/messages", channel_id),
+                                        Some(body),
+                                        &token,
+                                        None,
+                                    )
+                                    .await;
 
-                                     // Log behaviour
-                                     let _ = record_behaviour_interaction(&author_id_clone, &author_name, &message_snippet).await;
-                                     send_behaviour_log(&token, &behaviour_channel_id, &author_name, &author_id_clone, &message_snippet, "Non-owner Chat").await;
-                                 });
-                             }
+                                    // Log behaviour
+                                    let _ = record_behaviour_interaction(
+                                        &author_id_clone,
+                                        &author_name,
+                                        &message_snippet,
+                                    )
+                                    .await;
+                                    send_behaviour_log(
+                                        &token,
+                                        &behaviour_channel_id,
+                                        &author_name,
+                                        &author_id_clone,
+                                        &message_snippet,
+                                        "Non-owner Chat",
+                                    )
+                                    .await;
+                                });
+                            }
                         }
                     }
                 }
@@ -711,10 +755,12 @@ fn detect_discord_action_intent(text: &str) -> bool {
                 let next = trimmed[prefix.len()..].trim();
                 let prefix_len = prefix.len();
                 let trimmed_len = trimmed.len();
-                if next.is_empty() || (prefix_len < trimmed_len && {
-                    let b = trimmed.as_bytes()[prefix_len];
-                    b == b' ' || b == b',' || b == b':'
-                }) {
+                if next.is_empty()
+                    || (prefix_len < trimmed_len && {
+                        let b = trimmed.as_bytes()[prefix_len];
+                        b == b' ' || b == b',' || b == b':'
+                    })
+                {
                     trimmed = next;
                     stripped = true;
                 }
@@ -889,10 +935,7 @@ fn get_system_uptime_seconds() -> Option<u64> {
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    let output = cmd
-        .args(["-NoProfile", "-Command", script])
-        .output()
-        .ok()?;
+    let output = cmd.args(["-NoProfile", "-Command", script]).output().ok()?;
     if output.status.success() {
         let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if let Ok(ms) = text.parse::<u64>() {
@@ -1217,7 +1260,9 @@ async fn execute_discord_tool_call(
                 shutdown_cmd.args(["/r", "/t", "0"]).output()
             };
             #[cfg(target_os = "macos")]
-            let res = Command::new("osascript").args(["-e", "tell app \"System Events\" to restart"]).output();
+            let res = Command::new("osascript")
+                .args(["-e", "tell app \"System Events\" to restart"])
+                .output();
             #[cfg(target_os = "linux")]
             let res = Command::new("reboot").output();
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1227,15 +1272,12 @@ async fn execute_discord_tool_call(
             ));
 
             match res {
-                Ok(output) if output.status.success() => {
-                    Ok("System is restarting...".to_string())
-                }
-                Ok(output) => {
-                    Err(format!("Restart failed: {}", String::from_utf8_lossy(&output.stderr)))
-                }
-                Err(e) => {
-                    Err(format!("Restart failed: {}", e))
-                }
+                Ok(output) if output.status.success() => Ok("System is restarting...".to_string()),
+                Ok(output) => Err(format!(
+                    "Restart failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )),
+                Err(e) => Err(format!("Restart failed: {}", e)),
             }
         }
         "shutdown_system" => {
@@ -1248,7 +1290,9 @@ async fn execute_discord_tool_call(
                 shutdown_cmd.args(["/s", "/t", "0"]).output()
             };
             #[cfg(target_os = "macos")]
-            let res = Command::new("osascript").args(["-e", "tell app \"System Events\" to shut down"]).output();
+            let res = Command::new("osascript")
+                .args(["-e", "tell app \"System Events\" to shut down"])
+                .output();
             #[cfg(target_os = "linux")]
             let res = Command::new("poweroff").output();
             #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1261,12 +1305,11 @@ async fn execute_discord_tool_call(
                 Ok(output) if output.status.success() => {
                     Ok("System is shutting down...".to_string())
                 }
-                Ok(output) => {
-                    Err(format!("Shutdown failed: {}", String::from_utf8_lossy(&output.stderr)))
-                }
-                Err(e) => {
-                    Err(format!("Shutdown failed: {}", e))
-                }
+                Ok(output) => Err(format!(
+                    "Shutdown failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )),
+                Err(e) => Err(format!("Shutdown failed: {}", e)),
             }
         }
         "send_whatsapp_message" => {
@@ -1294,8 +1337,8 @@ async fn execute_discord_tool_call(
                 .get("recipient")
                 .and_then(|v| v.as_str())
                 .ok_or("recipient is missing")?;
-            let enabled = get_bool_arg(args, "enabled")
-                .ok_or("enabled is missing or not a boolean")?;
+            let enabled =
+                get_bool_arg(args, "enabled").ok_or("enabled is missing or not a boolean")?;
             let actual_name =
                 crate::integrations::whatsapp::internal_set_whatsapp_contact_auto_reply(
                     _app_handle,
@@ -1329,8 +1372,8 @@ async fn execute_discord_tool_call(
             ))
         }
         "toggle_whatsapp" => {
-            let enabled = get_bool_arg(args, "enabled")
-                .ok_or("enabled is missing or not a boolean")?;
+            let enabled =
+                get_bool_arg(args, "enabled").ok_or("enabled is missing or not a boolean")?;
             let mut config = state.config.lock().await;
             config.whatsapp_enabled = enabled;
             save_config(&config)?;
@@ -1544,8 +1587,7 @@ async fn execute_discord_tool_call(
             }
 
             let reason = args.get("reason").and_then(|v| v.as_str());
-            let delete_secs = get_u64_arg(args, "delete_message_seconds")
-                .map(|s| s as u32);
+            let delete_secs = get_u64_arg(args, "delete_message_seconds").map(|s| s as u32);
             do_discord_ban(
                 guild_id.to_string(),
                 user_id.to_string(),
@@ -1595,8 +1637,8 @@ async fn execute_discord_tool_call(
                 return Err("guild_id is missing and context is not a server.".to_string());
             }
 
-            let duration = get_u64_arg(args, "duration_mins")
-                .ok_or("duration_mins is missing or invalid")?;
+            let duration =
+                get_u64_arg(args, "duration_mins").ok_or("duration_mins is missing or invalid")?;
             let reason = args.get("reason").and_then(|v| v.as_str());
             do_discord_mute(
                 guild_id.to_string(),
@@ -1660,8 +1702,7 @@ async fn execute_discord_tool_call(
                 .get("channel_id")
                 .and_then(|v| v.as_str())
                 .ok_or("channel_id is missing")?;
-            let count = get_u64_arg(args, "count")
-                .ok_or("count is missing")?;
+            let count = get_u64_arg(args, "count").ok_or("count is missing")?;
             do_discord_delete_messages(channel_id.to_string(), count as u32, state).await?;
             Ok(format!(
                 "Deleted last {} messages in channel `{}`.",
@@ -1752,13 +1793,13 @@ async fn execute_discord_tool_call(
                 .get("prompt")
                 .and_then(|v| v.as_str())
                 .ok_or("prompt is missing")?;
-            let project_name = args
-                .get("project_name")
-                .and_then(|v| v.as_str());
+            let project_name = args.get("project_name").and_then(|v| v.as_str());
 
             let normalized_agent_name = match agent_name.to_lowercase().trim() {
                 "agy" | "antigravity" | "agye" => "agy".to_string(),
-                "claude" | "claude-code" | "claude_code" | "claudecode" => "claude-code".to_string(),
+                "claude" | "claude-code" | "claude_code" | "claudecode" => {
+                    "claude-code".to_string()
+                }
                 "codex" => "codex".to_string(),
                 "hermes" => "hermes".to_string(),
                 "freebuff" | "freebuf" => "freebuff".to_string(),
@@ -1778,7 +1819,9 @@ async fn execute_discord_tool_call(
                             .iter()
                             .find(|p| p.name.eq_ignore_ascii_case(requested_name))
                     })
-                    .ok_or_else(|| format!("Project '{}' not found. Add it in settings first.", pname))?;
+                    .ok_or_else(|| {
+                        format!("Project '{}' not found. Add it in settings first.", pname)
+                    })?;
                 let path = std::path::PathBuf::from(&project.path);
                 if !path.exists() {
                     return Err(format!(
@@ -1803,8 +1846,11 @@ async fn execute_discord_tool_call(
                     }),
                 )
                 .await?;
-            
-            Ok(format!("Agent **{}** execution completed.\nSummary: {}", normalized_agent_name, result))
+
+            Ok(format!(
+                "Agent **{}** execution completed.\nSummary: {}",
+                normalized_agent_name, result
+            ))
         }
         "get_cli_agents_status" => {
             let agents = state.cli_agent_manager.get_all_states().await;
@@ -1818,11 +1864,17 @@ async fn execute_discord_tool_call(
                     _ => "💤",
                 };
                 let task_str = if let Some(task) = &a.current_task {
-                    format!(" (working on: {})", if task.len() > 60 { &task[..60] } else { task })
+                    format!(
+                        " (working on: {})",
+                        if task.len() > 60 { &task[..60] } else { task }
+                    )
                 } else {
                     "".to_string()
                 };
-                lines.push(format!("{} **{}**: {:?}{}", status_icon, a.display_name, a.status, task_str));
+                lines.push(format!(
+                    "{} **{}**: {:?}{}",
+                    status_icon, a.display_name, a.status, task_str
+                ));
             }
             Ok(format!("**CLI Agent Status:**\n{}", lines.join("\n")))
         }
@@ -2175,11 +2227,15 @@ pub async fn do_discord_delete_messages(
     while remaining > 0 {
         let limit = if remaining > 100 { 100 } else { remaining };
         let endpoint = if let Some(ref oldest_id) = before {
-            format!("/channels/{}/messages?limit={}&before={}", channel_id, limit, oldest_id)
+            format!(
+                "/channels/{}/messages?limit={}&before={}",
+                channel_id, limit, oldest_id
+            )
         } else {
             format!("/channels/{}/messages?limit={}", channel_id, limit)
         };
-        let msgs_val = discord_api_call(reqwest::Method::GET, &endpoint, None, &token, None).await?;
+        let msgs_val =
+            discord_api_call(reqwest::Method::GET, &endpoint, None, &token, None).await?;
 
         let raw_ids: Vec<String> = msgs_val
             .as_array()
@@ -2248,7 +2304,10 @@ pub async fn do_discord_assign_role(
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
     let clean_user_id = sanitize_user_id(&user_id);
-    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, clean_user_id, role_id);
+    let endpoint = format!(
+        "/guilds/{}/members/{}/roles/{}",
+        guild_id, clean_user_id, role_id
+    );
     discord_api_call(reqwest::Method::PUT, &endpoint, None, &token, None).await?;
     Ok(())
 }
@@ -2271,7 +2330,10 @@ pub async fn do_discord_remove_role(
 ) -> Result<(), String> {
     let token = get_discord_token(state).await?;
     let clean_user_id = sanitize_user_id(&user_id);
-    let endpoint = format!("/guilds/{}/members/{}/roles/{}", guild_id, clean_user_id, role_id);
+    let endpoint = format!(
+        "/guilds/{}/members/{}/roles/{}",
+        guild_id, clean_user_id, role_id
+    );
     discord_api_call(reqwest::Method::DELETE, &endpoint, None, &token, None).await?;
     Ok(())
 }
@@ -2338,9 +2400,7 @@ pub async fn do_discord_send_channel_message(
     state: &AppState,
 ) -> Result<String, String> {
     let channels_val = do_discord_get_channels(guild_id.clone(), state).await?;
-    if let Some((channel_id, actual_name)) =
-        find_channel_by_name(&channels_val, &channel_name)
-    {
+    if let Some((channel_id, actual_name)) = find_channel_by_name(&channels_val, &channel_name) {
         let token = get_discord_token(state).await?;
         let body = serde_json::json!({
             "content": message
@@ -2378,9 +2438,7 @@ pub async fn do_set_discord_behaviour_channel(
     ))
 }
 
-pub async fn do_get_user_behaviour(
-    user_id: String,
-) -> Result<String, String> {
+pub async fn do_get_user_behaviour(user_id: String) -> Result<String, String> {
     Ok(get_user_behaviour_analysis(&user_id).await)
 }
 
@@ -2428,9 +2486,7 @@ pub async fn get_user_behaviour(
 }
 
 #[tauri::command]
-pub async fn get_system_status(
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+pub async fn get_system_status(state: State<'_, AppState>) -> Result<String, String> {
     get_status(state.inner()).await
 }
 
@@ -2454,7 +2510,10 @@ pub async fn set_discord_status(
     if let Some(a) = activity_label {
         parts.push(format!("activity to **{}**", a));
     }
-    Ok(format!("Successfully updated Discord bot's {}.", parts.join(" and ")))
+    Ok(format!(
+        "Successfully updated Discord bot's {}.",
+        parts.join(" and ")
+    ))
 }
 
 pub async fn internal_update_discord_status(
@@ -2534,7 +2593,12 @@ impl DiscordUserStats {
         std::fs::write(path, content).map_err(|e| e.to_string())
     }
 
-    fn record_interaction(&mut self, user_id: &str, username: &str, message: &str) -> Result<(), String> {
+    fn record_interaction(
+        &mut self,
+        user_id: &str,
+        username: &str,
+        message: &str,
+    ) -> Result<(), String> {
         let now = chrono::Local::now().to_rfc3339();
         let msg = message.chars().take(200).collect::<String>();
         if let Some(entry) = self.users.iter_mut().find(|e| e.user_id == user_id) {
@@ -2627,7 +2691,11 @@ async fn get_user_behaviour_analysis(user_id: &str) -> String {
              Last interaction: {}\n\
              No recent messages stored to analyse further.\n\
              ─────────────────────",
-            entry.username, entry.user_id, entry.message_count, entry.first_seen, entry.last_interaction
+            entry.username,
+            entry.user_id,
+            entry.message_count,
+            entry.first_seen,
+            entry.last_interaction
         );
     }
 
@@ -2704,7 +2772,12 @@ async fn get_user_behaviour_analysis(user_id: &str) -> String {
          ─────────────────────\n\
          {}\n\
          ─────────────────────",
-        entry.username, entry.user_id, entry.message_count, entry.first_seen, entry.last_interaction, analysis
+        entry.username,
+        entry.user_id,
+        entry.message_count,
+        entry.first_seen,
+        entry.last_interaction,
+        analysis
     )
 }
 
