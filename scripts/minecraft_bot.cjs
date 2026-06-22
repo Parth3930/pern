@@ -11,6 +11,7 @@ console.log(`Connecting to ${host}:${port} as ${username} (${version})...`);
 
 const bot = mineflayer.createBot({ host, port, username, auth: "offline", version });
 bot.loadPlugin(pathfinder);
+const mcData = require("minecraft-data")(bot.version || version);
 
 // ponytail: cushion dig time to prevent server anti-cheat/lag rejections ("digging too fast")
 const originalDigTime = bot.digTime;
@@ -22,6 +23,9 @@ let isFollowGoalSet = false;
 let taskGeneration = 0;
 let isFighting = false;
 let isChasing = false;
+let lastUser = null; // ponytail: track the player who is controlling the bot
+let lastAutoFollowTime = 0; // ponytail: rate-limit auto-follow spam
+
 
 // ponytail: flat lookup beats per-entity logic every time
 const MOB_THREAT = {
@@ -47,6 +51,23 @@ const MOB_THREAT = {
 const threatOf = (e) => (e && e.name && MOB_THREAT[e.name.toLowerCase()]) ?? -1;
 const isHostile = (e) => threatOf(e) >= 2;
 const TIER = ['Passive','Neutral','Easy','Medium','Boss'];
+
+function getUserPlayer() {
+  if (lastUser) {
+    const p = bot.players[lastUser];
+    if (p?.entity) return p;
+  }
+  return Object.values(bot.players).find(p => p.username !== bot.username && p.entity) || null;
+}
+
+function getFollowMovements() {
+  const mv = new Movements(bot, mcData);
+  mv.canDig = false; // ponytail: do not dig when following to avoid getting stuck in pits
+  mv.canPlaceBlocks = false; // ponytail: do not place blocks to avoid placement lockups
+  mv.allowParkour = false; // ponytail: avoid tricky jumps
+  mv.allowSprinting = false; // ponytail: slow and steady movement prevents physics desyncs
+  return mv;
+}
 
 function cancelCurrentTask() {
   taskGeneration++;
@@ -256,7 +277,7 @@ async function fetchBlock(sender, blockType, targetCount = 8) {
   const wc = () => getInventoryCount();
   if (wc() < targetCount) {
     bot.chat(`Fetching ${targetCount} ${blockType} (have ${wc()})...`);
-    bot.pathfinder.setMovements(Object.assign(new Movements(bot), { canDig: true, canPlaceBlocks: false }));
+    bot.pathfinder.setMovements(Object.assign(new Movements(bot, mcData), { canDig: true, canPlaceBlocks: false }));
   }
 
   const unreachable = [];
@@ -380,9 +401,7 @@ async function fetchBlock(sender, blockType, targetCount = 8) {
     if (playerEntity) {
       bot.chat("Returning to you...");
       try {
-        const mv = new Movements(bot);
-        mv.canDig = true;
-        mv.canPlaceBlocks = true;
+        const mv = getFollowMovements();
         bot.pathfinder.setMovements(mv);
 
         await gotoWithTimeout(new goals.GoalNear(playerEntity.position.x, playerEntity.position.y, playerEntity.position.z, 2), 20000);
@@ -496,7 +515,7 @@ function startCombatLoop() {
 bot.on("spawn", () => {
   console.log("Bot spawned!");
   bot.chat("Hello! I am Pern. Ready to help and survive!");
-  bot.pathfinder.setMovements(new Movements(bot));
+  bot.pathfinder.setMovements(getFollowMovements());
   startCombatLoop();
   bot.on("health", () => {
     // ponytail: count wood generically if needed, but let's just show inventory items count of any wood/logs for logging
@@ -508,6 +527,27 @@ bot.on("spawn", () => {
 });
 
 bot.on("physicTick", () => {
+  // ponytail: auto-follow if user is far (>= 50 blocks) and bot is not fighting
+  if (!isFighting && !isChasing) {
+    const userPlayer = getUserPlayer();
+    if (userPlayer && bot.entity?.position) {
+      const userEntity = userPlayer.entity;
+      const dist = bot.entity.position.distanceTo(userEntity.position);
+      const now = Date.now();
+      if (dist >= 50 && (followTarget !== userEntity || !isFollowGoalSet || now - lastAutoFollowTime > 10000)) {
+        lastAutoFollowTime = now;
+        console.log(`[AUTO-FOLLOW] User is ${dist.toFixed(1)}m away. Auto-firing follow...`);
+        bot.chat(`${userPlayer.username}, user too far getting to user`);
+        const mv = getFollowMovements();
+        bot.pathfinder.setMovements(mv);
+        cancelCurrentTask();
+        followTarget = userEntity;
+        isFollowGoalSet = true;
+        bot.pathfinder.setGoal(new goals.GoalFollow(followTarget, 4), true);
+      }
+    }
+  }
+
   if (isFighting || !followTarget || isBusy) return;
   const botPos = bot.entity?.position;
   if (!botPos) return;
@@ -522,6 +562,7 @@ bot.on("physicTick", () => {
 
 bot.on("chat", async (sender, message) => {
   if (sender === bot.username) return;
+  lastUser = sender; // ponytail: update last user to match chat sender
   console.log(`[CHAT] <${sender}> ${message}`);
   const m = message.toLowerCase();
 
@@ -543,8 +584,7 @@ bot.on("chat", async (sender, message) => {
     const p = bot.players[sender];
     if (!p?.entity) { bot.chat("Can't see you!"); return; }
     console.log(`[CHAT] Starting follow for ${sender}`);
-    const mv = new Movements(bot);
-    mv.canDig = true; mv.canPlaceBlocks = true;
+    const mv = getFollowMovements();
     bot.pathfinder.setMovements(mv);
     cancelCurrentTask();
     followTarget = p.entity; isFollowGoalSet = true;
