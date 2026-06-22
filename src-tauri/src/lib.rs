@@ -425,6 +425,10 @@ pub fn run() {
             commands::automations::run_automation_now,
             commands::automations::get_run_history,
             notifications::send_notification_command,
+            integrations::minecraft::detect_minecraft_lan_port,
+            integrations::minecraft::join_minecraft_world,
+            integrations::minecraft::disconnect_minecraft_world,
+            integrations::minecraft::get_minecraft_status,
             send_chat_message,
             submit_external_reply
         ])
@@ -440,6 +444,7 @@ pub fn run() {
                 }
                 integrations::whatsapp::cleanup_whatsapp_for_shutdown(&state).await;
                 integrations::discord::stop_discord_runtime(&state).await;
+                let _ = integrations::minecraft::disconnect_minecraft_world().await;
             });
         }
     });

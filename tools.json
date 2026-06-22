@@ -287,6 +287,22 @@
       "description": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
       "params": ["name"],
       "aliases": ["trigger_automation", "execute_automation", "fire_automation"]
+    },
+    {
+      "name": "join_minecraft_world",
+      "category": "system",
+      "args_signature": "port?: number, version?: string",
+      "description": "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+      "params": ["port", "version"],
+      "aliases": ["minecraft_join", "join_minecraft", "join_world", "connect_minecraft"]
+    },
+    {
+      "name": "disconnect_minecraft_world",
+      "category": "system",
+      "args_signature": "",
+      "description": "Disconnects the Pern bot player from the Minecraft world.",
+      "params": [],
+      "aliases": ["minecraft_disconnect", "disconnect_minecraft", "leave_minecraft"]
     }
   ],
   "discord_tools_with_guild_id": [

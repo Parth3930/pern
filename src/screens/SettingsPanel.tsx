@@ -11,6 +11,8 @@ import ProjectsSettings from "../integrations/projects/Settings";
 import MemorySettings from "../integrations/memory/Settings";
 import SkillsAndLearningSection from "../integrations/SkillsAndLearningPanel";
 import TodoPanel from "./TodoPanel";
+import MinecraftSettings from "../integrations/minecraft/Settings";
+
 
 interface Props {
   config: AppConfig;
@@ -304,8 +306,9 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
             </div>
           )}
         </section>
-
         <WhatsAppSettings config={config} />
+
+        <MinecraftSettings />
 
         <EmailSettings
           smtpHost={smtpHost}

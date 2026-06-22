@@ -566,6 +566,22 @@ export async function executeSingleTool(
         result = { ok: false, error: getErrorMessage(e) };
       }
     }
+  } else if (tc.tool === "join_minecraft_world") {
+    const port = getNumberArg(tc.args, "port") || undefined;
+    const version = getStringArg(tc.args, "version") || undefined;
+    try {
+      const msg = await api.joinMinecraftWorld(port, version);
+      result = { ok: true, message: msg };
+    } catch (e) {
+      result = { ok: false, error: getErrorMessage(e) };
+    }
+  } else if (tc.tool === "disconnect_minecraft_world") {
+    try {
+      const msg = await api.disconnectMinecraftWorld();
+      result = { ok: true, message: msg };
+    } catch (e) {
+      result = { ok: false, error: getErrorMessage(e) };
+    }
   } else {
     result = {
       ok: false,

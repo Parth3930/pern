@@ -367,6 +367,12 @@ export const api = {
   clearConversationSummary: () =>
     invoke<void>("clear_conversation_summary"),
 
+  // Minecraft integration
+  detectMinecraftLanPort: () => invoke<number | null>("detect_minecraft_lan_port"),
+  joinMinecraftWorld: (port?: number, version?: string) => invoke<string>("join_minecraft_world", { port: port ?? null, version: version ?? null }),
+  disconnectMinecraftWorld: () => invoke<string>("disconnect_minecraft_world"),
+  getMinecraftStatus: () => invoke<boolean>("get_minecraft_status"),
+
   onCLIAgentComplete: (
     cb: (data: {
       agent: string;

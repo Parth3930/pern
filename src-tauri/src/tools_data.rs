@@ -273,6 +273,20 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
         params: &["name"],
         signature: "- run_automation(name: string) -> Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
+    },
+    ToolDefinition {
+        name: "join_minecraft_world",
+        category: "system",
+        description: "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+        params: &["port", "version"],
+        signature: "- join_minecraft_world(port?: number, version?: string) -> Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+    },
+    ToolDefinition {
+        name: "disconnect_minecraft_world",
+        category: "system",
+        description: "Disconnects the Pern bot player from the Minecraft world.",
+        params: &[],
+        signature: "- disconnect_minecraft_world() -> Disconnects the Pern bot player from the Minecraft world.",
     }
 ];
 
@@ -337,7 +351,14 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("get_automations", "list_automations"),
     ("trigger_automation", "run_automation"),
     ("execute_automation", "run_automation"),
-    ("fire_automation", "run_automation")
+    ("fire_automation", "run_automation"),
+    ("minecraft_join", "join_minecraft_world"),
+    ("join_minecraft", "join_minecraft_world"),
+    ("join_world", "join_minecraft_world"),
+    ("connect_minecraft", "join_minecraft_world"),
+    ("minecraft_disconnect", "disconnect_minecraft_world"),
+    ("disconnect_minecraft", "disconnect_minecraft_world"),
+    ("leave_minecraft", "disconnect_minecraft_world")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[

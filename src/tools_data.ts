@@ -270,6 +270,20 @@ export const TOOLS = [
     description: "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
     params: ["name"],
     signature: "- run_automation(name: string) -> Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status."
+  },
+  {
+    name: "join_minecraft_world",
+    category: "system",
+    description: "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+    params: ["port", "version"],
+    signature: "- join_minecraft_world(port?: number, version?: string) -> Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4')."
+  },
+  {
+    name: "disconnect_minecraft_world",
+    category: "system",
+    description: "Disconnects the Pern bot player from the Minecraft world.",
+    params: [],
+    signature: "- disconnect_minecraft_world() -> Disconnects the Pern bot player from the Minecraft world."
   }
 ] as const;
 
@@ -334,7 +348,14 @@ export const ALIAS_MAP = {
   "get_automations": "list_automations",
   "trigger_automation": "run_automation",
   "execute_automation": "run_automation",
-  "fire_automation": "run_automation"
+  "fire_automation": "run_automation",
+  "minecraft_join": "join_minecraft_world",
+  "join_minecraft": "join_minecraft_world",
+  "join_world": "join_minecraft_world",
+  "connect_minecraft": "join_minecraft_world",
+  "minecraft_disconnect": "disconnect_minecraft_world",
+  "disconnect_minecraft": "disconnect_minecraft_world",
+  "leave_minecraft": "disconnect_minecraft_world"
 } as const;
 
 export const FEW_SHOTS = [
@@ -580,7 +601,9 @@ export const TOOL_DESCRIPTIONS = {
   "recall_fact": "Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
   "forget_fact": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
   "list_automations": "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
-  "run_automation": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status."
+  "run_automation": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
+  "join_minecraft_world": "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+  "disconnect_minecraft_world": "Disconnects the Pern bot player from the Minecraft world."
 } as const;
 
 export const TOOL_PARAMS = {
@@ -619,5 +642,7 @@ export const TOOL_PARAMS = {
   "recall_fact": ["query", "k"],
   "forget_fact": ["key"],
   "list_automations": ["query", "k"],
-  "run_automation": ["name"]
+  "run_automation": ["name"],
+  "join_minecraft_world": ["port", "version"],
+  "disconnect_minecraft_world": []
 } as const;
