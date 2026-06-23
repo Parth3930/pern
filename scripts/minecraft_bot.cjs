@@ -1,6 +1,40 @@
+const fs = require("fs");
+const path = require("path");
+// __dirname is scripts/ so log goes to scripts/minecraft_bot.log
+const logPath = path.join(__dirname, "minecraft_bot.log");
+const logFile = fs.createWriteStream(logPath, { flags: "w" });
+
+console.log = function (...args) {
+  const msg = args
+    .map((x) => (typeof x === "object" ? JSON.stringify(x) : x))
+    .join(" ");
+  logFile.write(`[LOG] ${new Date().toISOString()} ${msg}\n`);
+};
+
+console.error = function (...args) {
+  const msg = args
+    .map((x) => (typeof x === "object" ? JSON.stringify(x) : x))
+    .join(" ");
+  logFile.write(`[ERR] ${new Date().toISOString()} ${msg}\n`);
+};
+
 const mineflayer = require("mineflayer");
-const { pathfinder, Movements, goals } = require("mineflayer-pathfinder");
 const { Vec3 } = require("vec3");
+const { pathfinder, goals } = require("mineflayer-pathfinder");
+const customPathfinder = require("./bot/custom_pathfinder.cjs");
+const {
+  getUserPlayer,
+  getFollowMovements,
+  cancelCurrentTask,
+  getAIResponse,
+  threatOf,
+  hasSword,
+  sleep,
+  safeDigWithTimeout,
+} = require("./bot/helpers.cjs");
+const { startCombatLoop } = require("./bot/combat.cjs");
+const { recoverNearbyCraftingTable } = require("./bot/crafting.cjs");
+const { fetchBlock } = require("./bot/mining.cjs");
 
 const port = parseInt(process.argv[2]) || 25565;
 const host = process.argv[3] || "localhost";
@@ -9,569 +43,722 @@ const version = process.argv[5] || "1.20.4";
 
 console.log(`Connecting to ${host}:${port} as ${username} (${version})...`);
 
-const bot = mineflayer.createBot({ host, port, username, auth: "offline", version });
+const bot = mineflayer.createBot({
+  host,
+  port,
+  username,
+  auth: "offline",
+  version,
+});
 bot.loadPlugin(pathfinder);
+bot.loadPlugin(customPathfinder);
+
 const mcData = require("minecraft-data")(bot.version || version);
+bot.mcData = mcData;
 
-// ponytail: cushion dig time to prevent server anti-cheat/lag rejections ("digging too fast")
-const originalDigTime = bot.digTime;
-bot.digTime = (block) => Math.ceil(originalDigTime.call(bot, block) * 1.25 + 150);
-
-let followTarget = null;
-let isBusy = false;
-let isFollowGoalSet = false;
-let taskGeneration = 0;
-let isFighting = false;
-let isChasing = false;
-let lastUser = null; // ponytail: track the player who is controlling the bot
-let lastAutoFollowTime = 0; // ponytail: rate-limit auto-follow spam
-
-
-// ponytail: flat lookup beats per-entity logic every time
-const MOB_THREAT = {
-  sheep:0, cow:0, pig:0, chicken:0, rabbit:0, squid:0, glow_squid:0, bat:0,
-  villager:0, snow_golem:0, cat:0, parrot:0, horse:0, donkey:0, mule:0,
-  llama:0, trader_llama:0, panda:0, fox:0, turtle:0, axolotl:0, strider:0,
-  cod:0, salmon:0, pufferfish:0, tropical_fish:0, dolphin:0, ocelot:0,
-  wandering_trader:0, tadpole:0, frog:0, sniffer:0, camel:0, armadillo:0,
-
-  wolf:1, bee:1, polar_bear:1, iron_golem:1, goat:1,
-
-  zombie:2, skeleton:2, spider:2, cave_spider:2, drowned:2, husk:2, stray:2,
-  slime:2, magma_cube:2, zombified_piglin:2, silverfish:2, endermite:2,
-  phantom:2, zombie_villager:2, chicken_jockey:2,
-
-  creeper:3, witch:3, blaze:3, guardian:3, pillager:3, vindicator:3, evoker:3,
-  ravager:3, vex:3, ghast:3, shulker:3, enderman:3, hoglin:3, piglin_brute:3,
-  bogged:3, breeze:3, elder_guardian:3, warden_light:3,
-
-  wither_skeleton:4, wither:4, ender_dragon:4, warden:4, zoglin:4,
+// Initialize bot state context
+bot.botState = {
+  followTarget: null,
+  isBusy: false,
+  isFollowGoalSet: false,
+  taskGeneration: 0,
+  isFighting: false,
+  isChasing: false,
+  lastUser: null,
+  lastAutoFollowTime: 0,
+  isRecovering: false,
+  lastKnownTargetPos: null, // cached last known position of follow target
+  landingCooldownTicks: 0, // ticks after jump-place landing to prevent lookAt/movement interference
 };
 
-const threatOf = (e) => (e && e.name && MOB_THREAT[e.name.toLowerCase()]) ?? -1;
-const isHostile = (e) => threatOf(e) >= 2;
-const TIER = ['Passive','Neutral','Easy','Medium','Boss'];
-
-function getUserPlayer() {
-  if (lastUser) {
-    const p = bot.players[lastUser];
-    if (p?.entity) return p;
-  }
-  return Object.values(bot.players).find(p => p.username !== bot.username && p.entity) || null;
-}
-
-function getFollowMovements() {
-  const mv = new Movements(bot, mcData);
-  mv.canDig = false; // ponytail: do not dig when following to avoid getting stuck in pits
-  mv.canPlaceBlocks = false; // ponytail: do not place blocks to avoid placement lockups
-  mv.allowParkour = false; // ponytail: avoid tricky jumps
-  mv.allowSprinting = false; // ponytail: slow and steady movement prevents physics desyncs
-  return mv;
-}
-
-function cancelCurrentTask() {
-  taskGeneration++;
-  isBusy = false;
-  isChasing = false;
-  followTarget = null;
-  isFollowGoalSet = false;
-  bot.pathfinder.setGoal(null);
-  try { bot.stopDigging(); } catch (_) {}
-}
-
-async function getAIResponse(sender, message) {
-  try {
-    const res = await fetch("http://127.0.0.1:4891/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "local",
-        messages: [
-          { role: "system", content: "You are Pern, a Minecraft AI. Keep replies under 2 sentences." },
-          { role: "user", content: `<${sender}> ${message}` },
-        ],
-        stream: false,
-      }),
-    });
-    return (await res.json()).choices[0].message.content;
-  } catch {
-    return "My AI brain is unreachable right now.";
-  }
-}
-
-const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function safeDigWithTimeout(block, timeoutMs = 20000) {
-  try { bot.stopDigging(); } catch (_) {}
-  bot.pathfinder.setGoal(null); // ponytail: stop movement before digging to avoid desync
-  
-  for (let i = 0; i < 5; i++) {
-    const vel = bot.entity?.velocity;
-    if (!vel || Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z) < 0.01) break;
-    await sleep(50);
-  }
-
-  // ponytail: ensure best tool is equipped right before digging
-  await equipBestTool(block);
-
-  // ponytail: look at the center of the block instead of the corner to prevent server rejection
-  await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true);
-  let digError = null;
-  const digP = bot.dig(block, true).catch(err => { digError = err; });
-  const result = await Promise.race([
-    digP.then(() => 'done'),
-    sleep(timeoutMs).then(() => 'timeout')
-  ]);
-  
-  if (result === 'timeout') {
-    try { bot.stopDigging(); } catch (_) {}
-    throw new Error('dig timeout');
-  }
-  if (digError) {
-    try { bot.stopDigging(); } catch (_) {}
-    throw digError;
-  }
-
-  // ponytail: wait up to 1000ms for server block update to sync
-  let broken = false;
-  for (let i = 0; i < 4; i++) {
-    const finalBlock = bot.blockAt(block.position);
-    if (!finalBlock || finalBlock.type === 0) {
-      broken = true;
-      break;
-    }
-    await sleep(250);
-  }
-
-  if (!broken) {
-    try { bot.stopDigging(); } catch (_) {}
-    throw new Error('block not broken on server');
-  }
-}
-
-async function gotoWithTimeout(goal, timeoutMs = 15000) {
-  let finished = false;
-  try {
-    await Promise.race([
-      bot.pathfinder.goto(goal).finally(() => { finished = true; }),
-      sleep(timeoutMs).then(() => {
-        if (!finished) {
-          bot.pathfinder.setGoal(null);
-          throw new Error(`Pathfinding timed out after ${timeoutMs}ms`);
-        }
-      })
-    ]);
-  } catch (err) {
-    bot.pathfinder.setGoal(null);
-    throw err;
-  }
-}
-
-const hasSword   = () => bot.inventory.items().some(i => i.name.includes('sword'));
-const bestSword  = () => bot.inventory.items()
-  .filter(i => i.name.includes('sword'))
-  .sort((a,b) => tierRank(b) - tierRank(a))[0];
-
-function tierRank(item) {
-  return ['wooden','stone','iron','golden','diamond','netherite']
-    .findIndex(t => item.name.includes(t));
-}
-
-async function equipBestTool(block) {
-  if (!block || !block.name) return;
-  const bname = block.name.toLowerCase();
-  
-  let toolKeyword = null;
-  if (bname.includes('log') || bname.includes('wood') || bname.includes('stem') || bname.includes('hyphae') || bname.includes('planks')) {
-    toolKeyword = 'axe';
-  } else if (bname.includes('stone') || bname.includes('cobblestone') || bname.includes('ore') || bname.includes('granite') || bname.includes('diorite') || bname.includes('andesite') || bname.includes('obsidian') || bname.includes('brick') || bname.includes('basalt')) {
-    toolKeyword = 'pickaxe';
-  } else if (bname.includes('dirt') || bname.includes('grass_block') || bname.includes('sand') || bname.includes('gravel') || bname.includes('clay') || bname.includes('snow')) {
-    toolKeyword = 'shovel';
-  }
-
-  if (toolKeyword) {
-    const bestTool = bot.inventory.items()
-      .filter(i => i.name.includes(toolKeyword) && (toolKeyword !== 'axe' || !i.name.includes('pickaxe')))
-      .sort((a, b) => tierRank(b) - tierRank(a))[0];
-    if (bestTool) {
-      if (bot.heldItem && bot.heldItem.name === bestTool.name) return;
-      await bot.equip(bestTool, 'hand').catch(() => {});
-      return;
-    }
-  }
-
-  // If holding a tool that isn't the best/needed tool, unequip to avoid speed penalties
-  if (bot.heldItem && (bot.heldItem.name.includes('axe') || bot.heldItem.name.includes('pickaxe') || bot.heldItem.name.includes('shovel') || bot.heldItem.name.includes('sword'))) {
-    await bot.unequip('hand').catch(() => {});
-  }
-}
-
-const foodItems  = ['cooked_beef','cooked_porkchop','cooked_chicken','apple','bread','beef','porkchop','chicken','mutton'];
-const bestFood   = () => bot.inventory.items().find(i => foodItems.includes(i.name));
-
-async function equipBest() {
-  const sw = bestSword();
-  if (sw) {
-    if (!bot.heldItem || bot.heldItem.name !== sw.name) {
-      await bot.equip(sw, 'hand').catch(() => {});
-    }
-  }
-  for (const slot of ['helmet','chestplate','leggings','boots']) {
-    const ar = bot.inventory.items()
-      .filter(i => i.name.includes(slot))
-      .sort((a,b) => tierRank(b) - tierRank(a))[0];
-    if (ar) await bot.equip(ar, slot).catch(() => {});
-  }
-}
-
-async function fetchBlock(sender, blockType, targetCount = 8) {
-  cancelCurrentTask();
-  const myGen = taskGeneration;
-  isBusy = true;
-
-  const player = bot.players[sender];
-  if (!player?.entity) { bot.chat("I can't see you!"); isBusy = false; return; }
-
-  const mcData = require('minecraft-data')(bot.version);
-  const targetLower = blockType.toLowerCase();
-
-  const matchingBlockIds = new Set();
-  for (const b of Object.values(mcData.blocks)) {
-    if (targetLower === 'wood' || targetLower === 'log') {
-      if (b.name.includes('log') || b.name.includes('wood') || b.name.includes('stem') || b.name.includes('hyphae')) {
-        matchingBlockIds.add(b.id);
-      }
-    } else if (b.name === targetLower || b.name.includes(targetLower)) {
-      matchingBlockIds.add(b.id);
-    }
-  }
-
-  const matchingItemIds = new Set();
-  for (const i of Object.values(mcData.items)) {
-    if (targetLower === 'wood' || targetLower === 'log') {
-      if (i.name.includes('log') || i.name.includes('wood') || i.name.includes('stem') || i.name.includes('hyphae')) {
-        matchingItemIds.add(i.id);
-      }
-    } else if (i.name === targetLower || i.name.includes(targetLower)) {
-      matchingItemIds.add(i.id);
-    }
-  }
-
-  if (matchingBlockIds.size === 0) {
-    bot.chat(`I don't know what block matches '${blockType}'.`);
-    isBusy = false;
-    return;
-  }
-
-  const isMatchingEntity = (e) => {
-    if (e.type !== 'item' && e.name !== 'item' && e.name !== 'Item' && e.name !== 'item_stack') return false;
-    const item = typeof e.getDroppedItem === 'function' ? e.getDroppedItem() : null;
-    return item && matchingItemIds.has(item.type);
-  };
-
-  const getInventoryCount = () => bot.inventory.items()
-    .filter(i => matchingItemIds.has(i.type))
-    .reduce((s, i) => s + i.count, 0);
-
-  const wc = () => getInventoryCount();
-  if (wc() < targetCount) {
-    bot.chat(`Fetching ${targetCount} ${blockType} (have ${wc()})...`);
-    bot.pathfinder.setMovements(Object.assign(new Movements(bot, mcData), { canDig: true, canPlaceBlocks: false }));
-  }
-
-  const unreachable = [];
-  let harvested = wc(), wanderAttempts = 0;
-
-  while (harvested < targetCount) {
-    if (taskGeneration !== myGen || isFighting) break;
-
-    const botPos = bot.entity?.position;
-    if (!botPos) {
-      await sleep(500);
-      continue;
-    }
-
-    // ponytail: check for any matching items on the ground first to save mining time
-    const droppedItem = bot.nearestEntity(e => 
-      isMatchingEntity(e) && 
-      botPos.distanceTo(e.position) < 32 && 
-      !unreachable.some(p => p.distanceTo(e.position) < 1.5)
-    );
-
-    if (droppedItem) {
-      console.log(`[MINING] Found dropped ${blockType} item on ground at ${droppedItem.position}. Collecting...`);
-      try {
-        await gotoWithTimeout(new goals.GoalNear(droppedItem.position.x, droppedItem.position.y, droppedItem.position.z, 0.5), 10000);
-        await sleep(250);
-        const oldWc = harvested;
-        harvested = wc();
-        if (harvested <= oldWc) {
-          unreachable.push(droppedItem.position.clone());
-        }
-      } catch (err) {
-        console.log(`[MINING] Failed to navigate to dropped item: ${err.message}`);
-        unreachable.push(droppedItem.position.clone());
-      }
-      continue;
-    }
-
-    // ponytail: findBlocks (plural) + manual filter
-    const candidates = bot.findBlocks({ matching: Array.from(matchingBlockIds), maxDistance: 32, count: 64 });
-    console.log(`[MINING] Found ${candidates.length} candidate blocks.`);
-    const block = candidates
-      .filter(pos => {
-        const dy = pos.y - botPos.y;
-        const isUnderfoot = (Math.pow(pos.x + 0.5 - botPos.x, 2) + Math.pow(pos.z + 0.5 - botPos.z, 2) < 0.8) && (pos.y < botPos.y + 0.5);
-        return dy >= -3 && dy <= 10 && !isUnderfoot && !unreachable.some(p => p.equals(pos));
-      })
-      .sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos))
-      .map(pos => bot.blockAt(pos))
-      .find(b => b && b.type !== 0);
-
-    if (!block) {
-      console.log(`[MINING] No suitable block found nearby. unreachable list size: ${unreachable.length}`);
-      if (wanderAttempts++ < 3) {
-        const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 20;
-        const dest = botPos.offset(Math.cos(a)*d, 0, Math.sin(a)*d);
-        console.log(`[MINING] Wandering to ${dest} (attempt ${wanderAttempts}/3) to find more...`);
-        try { await gotoWithTimeout(new goals.GoalXZ(dest.x, dest.z), 15000); } catch (err) { console.log(`[MINING] Wander pathfind failed: ${err.message}`); }
-        unreachable.length = 0;
-        continue;
-      }
-      bot.chat(harvested > 0 ? `No more ${blockType}. Returning with ${harvested}.` : `No ${blockType} within 32 blocks.`);
-      break;
-    }
-
-    console.log(`[MINING] Selected block at ${block.position} (dist: ${botPos.distanceTo(block.position).toFixed(1)}m)`);
-    try {
-      const distXZ = Math.sqrt(Math.pow(block.position.x - botPos.x, 2) + Math.pow(block.position.z - botPos.z, 2));
-      const distY = Math.abs(block.position.y - botPos.y);
-      if (distXZ > 2 || distY > 3 || !bot.canDigBlock(block)) {
-        console.log(`[MINING] Navigating to block at ${block.position}...`);
-        const targetY = block.position.y > botPos.y ? botPos.y : block.position.y;
-        await gotoWithTimeout(new goals.GoalNear(block.position.x, targetY, block.position.z, 1.5), 15000);
-        await sleep(250);
-      }
-      const cb = bot.blockAt(block.position);
-      if (!cb || cb.type === 0) { 
-        console.log(`[MINING] Block at ${block.position} is air/null when arrived.`);
-        unreachable.push(block.position); 
-        continue; 
-      }
-      if (!bot.canDigBlock(cb)) {
-        console.log(`[MINING] Block at ${block.position} cannot be dug.`);
-        unreachable.push(block.position);
-        continue;
-      }
-      console.log(`[MINING] Starting to dig block at ${block.position} (type: ${cb.type}, name: ${cb.name})...`);
-      await safeDigWithTimeout(cb, 20000);
-      console.log(`[MINING] Successfully dug block at ${block.position}`);
-      
-      let foundItem = false;
-      for (let i = 0; i < 10; i++) {
-        const item = bot.nearestEntity(e => 
-          (e.type === 'item' || e.name === 'item' || e.name === 'Item' || e.name === 'item_stack') && 
-          Math.abs(e.position.x - block.position.x) < 1.5 && 
-          Math.abs(e.position.z - block.position.z) < 1.5
-        );
-        if (item) {
-          foundItem = true;
-          if (bot.entity.position.distanceTo(item.position) > 1.5) {
-            console.log(`[MINING] Moving to collect item at ${item.position}`);
-            await gotoWithTimeout(new goals.GoalNear(item.position.x, item.position.y, item.position.z, 0.5), 3000).catch(() => {});
-            break;
-          }
-        } else if (foundItem) {
-          break;
-        }
-        await sleep(100);
-      }
-      harvested = wc();
-    } catch (err) {
-      console.log(`[MINING] Error digging or moving: ${err.message}`);
-      unreachable.push(block.position);
-      await sleep(250);
-    }
-  }
-
-  if (wc() > 0) {
-    const targetPlayer = bot.players[sender] || { username: sender };
-    const playerEntity = targetPlayer.entity || bot.nearestEntity(e => e.type === 'player' && e.username === sender);
-    if (playerEntity) {
-      bot.chat("Returning to you...");
-      try {
-        const mv = getFollowMovements();
-        bot.pathfinder.setMovements(mv);
-
-        await gotoWithTimeout(new goals.GoalNear(playerEntity.position.x, playerEntity.position.y, playerEntity.position.z, 2), 20000);
-        await bot.lookAt(playerEntity.position.offset(0, playerEntity.height, 0));
-        bot.chat(`Here is the ${blockType}!`);
-      } catch (err) {
-        console.log(`[MINING] Return pathfinding failed: ${err.message}`);
-        bot.chat("I got stuck trying to return to you, dropping the items here!");
-      }
-    } else {
-      bot.chat("I can't see you anymore, dropping the items here!");
-    }
-    const itemsToToss = bot.inventory.items().filter(i => matchingItemIds.has(i.type));
-    for (const i of itemsToToss) { await bot.tossStack(i).catch(()=>{}); await sleep(250); }
-  } else {
-    bot.chat(`No ${blockType} to give!`);
-  }
-  isBusy = false;
-}
-
-function startCombatLoop() {
-  setInterval(async () => {
-    if (isFighting || isChasing) return;
-
-    const botPos = bot.entity?.position;
-    if (!botPos) return;
-
-    const threats = Object.values(bot.entities ?? {})
-      .filter(e => e?.isValid && threatOf(e) >= 2 && botPos.distanceTo(e.position) < 10)
-      .map(e => ({ e, lvl: threatOf(e), dist: botPos.distanceTo(e.position) }))
-      .sort((a,b) => b.lvl - a.lvl || a.dist - b.dist);
-
-    if (!threats.length) return;
-
-    const { e: hostile, lvl } = threats[0];
-    if (!hostile.isValid) return;
-
-    if (lvl >= 4 && bot.health < 16) {
-      console.log(`[COMBAT] Fleeing ${hostile.name} (Level ${lvl} ${TIER[lvl]})`);
-      bot.chat(`${hostile.name} is too dangerous — running!`);
-      const dx = botPos.x - hostile.position.x;
-      const dz = botPos.z - hostile.position.z;
-      const flee = botPos.offset(dx*2, 0, dz*2);
-      bot.pathfinder.setGoal(new goals.GoalXZ(Math.floor(flee.x), Math.floor(flee.z)), true);
-      await sleep(3000);
-      bot.pathfinder.setGoal(null);
-      return;
-    }
-
-    const prevFollow = followTarget;
-    cancelCurrentTask(); // ponytail: cancel wood/crafting immediately when under attack to avoid action conflicts
-    isChasing = true;
-    console.log(`[COMBAT] Engaging ${hostile.name} — Threat ${lvl} (${TIER[lvl]}), dist ${threats[0].dist.toFixed(1)}m`);
-
-    try {
-      await equipBest();
-      bot.pathfinder.setGoal(new goals.GoalFollow(hostile, 2), true);
-
-      while (hostile.isValid) {
-        const currentBotPos = bot.entity?.position;
-        if (!currentBotPos) break;
-        const dist = currentBotPos.distanceTo(hostile.position);
-        if (dist > 16) break;
-
-        if (hostile.name === 'creeper' && dist < 3) {
-          const ang = Math.atan2(currentBotPos.z - hostile.position.z, currentBotPos.x - hostile.position.x);
-          bot.pathfinder.setGoal(new goals.GoalXZ(
-            Math.floor(currentBotPos.x + Math.cos(ang)*5),
-            Math.floor(currentBotPos.z + Math.sin(ang)*5)
-          ), true);
-          await sleep(800);
-          bot.pathfinder.setGoal(new goals.GoalFollow(hostile, 3), true);
-          continue;
-        }
-
-        if (dist <= 4) {
-          isFighting = true;
-          await bot.lookAt(hostile.position.offset(0, hostile.height/2, 0), true);
-          bot.attack(hostile);
-          isFighting = false;
-        }
-
-        if (bot.health < 8) {
-          const f = bestFood();
-          if (f) {
-            bot.pathfinder.setGoal(null);
-            await bot.equip(f, 'hand').catch(()=>{});
-            await bot.consume().catch(()=>{});
-            bot.pathfinder.setGoal(new goals.GoalFollow(hostile, 2), true);
-          }
-        }
-
-        await sleep(500);
-      }
-    } catch (e) {
-      console.warn('[COMBAT] Error:', e.message ?? e);
-    } finally {
-      isFighting = false;
-      isChasing = false;
-      isBusy = false;
-      bot.pathfinder.setGoal(null);
-      if (prevFollow?.isValid) {
-        followTarget = prevFollow;
-        bot.pathfinder.setGoal(new goals.GoalFollow(followTarget, 4), true);
-        isFollowGoalSet = true;
-      }
-    }
-  }, 500);
-}
+// Cushion dig time to prevent server anti-cheat/lag rejections ("digging too fast")
+const originalDigTime = bot.digTime;
+bot.digTime = (block) =>
+  Math.ceil(originalDigTime.call(bot, block) * 1.25 + 150);
 
 bot.on("spawn", () => {
   console.log("Bot spawned!");
   bot.chat("Hello! I am Pern. Ready to help and survive!");
-  bot.pathfinder.setMovements(getFollowMovements());
-  startCombatLoop();
-  bot.on("health", () => {
-    // ponytail: count wood generically if needed, but let's just show inventory items count of any wood/logs for logging
-    const woodCount = bot.inventory.items()
-      .filter(i => i.name.includes('log') || i.name.includes('wood') || i.name.includes('stem'))
-      .reduce((s,i) => s + i.count, 0);
-    console.log(`[LIFE] HP:${bot.health?.toFixed(1)}/20 Food:${bot.food}/20 | Sword:${hasSword()} | Wood:${woodCount}`);
-  });
+  bot.pathfinder.setMovements(getFollowMovements(bot));
+
+  // Start combat loop
+  startCombatLoop(bot);
+
+  // Auto-detect nearest player every 5s and begin following if no explicit target
+  setInterval(() => {
+    const state = bot.botState;
+    if (state.isBusy || state.isFighting || state.isRecovering) return;
+    // Prefer the existing explicit follow target if still visible
+    if (state.followTarget && bot.players[state.followTarget]?.entity) {
+      if (!state.isFollowGoalSet) {
+        const p = bot.players[state.followTarget];
+        bot.pathfinder.setMovements(getFollowMovements(bot));
+        bot.pathfinder.setGoal(new goals.GoalFollow(p.entity, 4), true);
+        state.isFollowGoalSet = true;
+        console.log(
+          `[AutoFollow] Re-applied goal for existing target: ${state.followTarget}`,
+        );
+      }
+      return;
+    }
+    // Otherwise pick the nearest visible player
+    const nearest = Object.values(bot.players)
+      .filter((p) => p.username !== bot.username && p.entity)
+      .sort(
+        (a, b) =>
+          bot.entity.position.distanceTo(a.entity.position) -
+          bot.entity.position.distanceTo(b.entity.position),
+      )[0];
+    if (nearest) {
+      console.log(
+        `[AutoFollow] Auto-following nearest player: ${nearest.username}`,
+      );
+      state.followTarget = nearest.username;
+      state.lastUser = nearest.username;
+      state.isFollowGoalSet = true;
+      bot.pathfinder.setMovements(getFollowMovements(bot));
+      bot.pathfinder.setGoal(new goals.GoalFollow(nearest.entity, 4), true);
+    } else {
+      console.log("[AutoFollow] No visible players in range to follow.");
+    }
+  }, 5000);
 });
 
-bot.on("physicTick", () => {
-  // ponytail: auto-follow if user is far (>= 50 blocks) and bot is not fighting
-  if (!isFighting && !isChasing) {
-    const userPlayer = getUserPlayer();
-    if (userPlayer && bot.entity?.position) {
-      const userEntity = userPlayer.entity;
-      const dist = bot.entity.position.distanceTo(userEntity.position);
-      const now = Date.now();
-      if (dist >= 50 && (followTarget !== userEntity || !isFollowGoalSet || now - lastAutoFollowTime > 10000)) {
-        lastAutoFollowTime = now;
-        console.log(`[AUTO-FOLLOW] User is ${dist.toFixed(1)}m away. Auto-firing follow...`);
-        bot.chat(`${userPlayer.username}, user too far getting to user`);
-        const mv = getFollowMovements();
-        bot.pathfinder.setMovements(mv);
-        cancelCurrentTask();
-        followTarget = userEntity;
-        isFollowGoalSet = true;
-        bot.pathfinder.setGoal(new goals.GoalFollow(followTarget, 4), true);
+bot.on("path_update", (results) => {
+  const state = bot.botState;
+  if (
+    results.path.length === 0 &&
+    state.followTarget &&
+    !state.isRecovering &&
+    !state.isFighting
+  ) {
+    const targetPlayer = bot.players[state.followTarget];
+    const targetEntity = targetPlayer?.entity;
+    if (targetEntity) {
+      const yDiff = Math.floor(targetEntity.position.y - bot.entity.position.y);
+      if (yDiff > 2) {
+        state.noPathTicks = 60;
+      }
+    }
+  }
+});
+
+bot.on("physicsTick", () => {
+  const state = bot.botState;
+
+  // ponytail: stuck detection and active recovery when following a target
+  const isMoving =
+    typeof bot.pathfinder?.isMoving === "function" && bot.pathfinder.isMoving();
+  const isMining =
+    typeof bot.pathfinder?.isMining === "function" && bot.pathfinder.isMining();
+  const isBuilding =
+    typeof bot.pathfinder?.isBuilding === "function" &&
+    bot.pathfinder.isBuilding();
+  const currentPos = bot.entity?.position;
+
+  if (!state.lastLogTime || Date.now() - state.lastLogTime > 1000) {
+    state.lastLogTime = Date.now();
+    console.log(
+      `[PhysicsTick] followTarget: ${state.followTarget}, isFollowGoalSet: ${state.isFollowGoalSet}, isBusy: ${state.isBusy}, isRecovering: ${state.isRecovering}, isMoving: ${isMoving}, isMining: ${isMining}, isBuilding: ${isBuilding}`,
+    );
+    if (state.followTarget) {
+      const followPlayer = bot.players[state.followTarget];
+      const followEntity = followPlayer?.entity;
+      if (followEntity) {
+        console.log(
+          `[PhysicsTick] target entity found at ${followEntity.position}, dist: ${currentPos?.distanceTo(followEntity.position).toFixed(1)}`,
+        );
+      } else {
+        console.log(
+          `[PhysicsTick] target entity NOT found in loaded range for user: ${state.followTarget}`,
+        );
       }
     }
   }
 
-  if (isFighting || !followTarget || isBusy) return;
+  if (
+    state.isFollowGoalSet &&
+    !state.isFighting &&
+    !state.isChasing &&
+    !state.isBusy &&
+    !state.isRecovering &&
+    currentPos
+  ) {
+    const followPlayer = bot.players[state.followTarget];
+    const followEntity = followPlayer?.entity;
+    const distToTarget = followEntity
+      ? currentPos.distanceTo(followEntity.position)
+      : 0;
+
+    // Landing cooldown: give the bot time to settle after a jump-place landing
+    // Prevents the main loop from looking at player or running stuck detection while
+    // the custom pathfinder is still re-planning from the new position on the pillar
+    if (state.landingCooldownTicks > 0) {
+      state.landingCooldownTicks--
+      return
+    }
+
+    if (distToTarget > 4) {
+      if (isMoving) {
+        if (
+          state.lastPosition &&
+          currentPos.distanceTo(state.lastPosition) < 0.1
+        ) {
+          state.stuckTicks = (state.stuckTicks || 0) + 1;
+        } else {
+          state.stuckTicks = 0;
+        }
+      } else {
+        state.stuckTicks = 0;
+      }
+      state.lastPosition = currentPos.clone();
+
+      if (!isMoving && !isMining && !isBuilding && !bot.pathfinder.planning) {
+        state.noPathTicks = (state.noPathTicks || 0) + 1;
+      } else {
+        state.noPathTicks = 0;
+      }
+
+      if (state.stuckTicks >= 60 || state.noPathTicks >= 60) {
+        const isNoPath = state.noPathTicks >= 60;
+        state.stuckTicks = 0;
+        state.noPathTicks = 0;
+        state.isRecovering = true;
+
+        (async () => {
+          try {
+            console.log(
+              `[UNSTUCK] Bot is stuck (noPath: ${isNoPath})! Running recovery...`,
+            );
+            bot.pathfinder.setGoal(null);
+            bot.clearControlStates();
+            await sleep(100);
+
+            const targetPlayer = bot.players[state.followTarget];
+            const targetEntity = targetPlayer?.entity;
+            if (!targetEntity) return;
+
+            // ponytail: if target is already close enough, skip recovery entirely
+            if (bot.entity && targetEntity) {
+              const distToTarget = bot.entity.position.distanceTo(
+                targetEntity.position,
+              );
+              if (distToTarget <= 5) {
+                console.log(
+                  `[UNSTUCK] Target already within ${distToTarget.toFixed(1)} blocks, skipping recovery.`,
+                );
+                if (state.followTarget) {
+                  bot.pathfinder.setMovements(getFollowMovements(bot));
+                  bot.pathfinder.setGoal(
+                    new goals.GoalFollow(targetEntity, 4),
+                    true,
+                  );
+                  state.isFollowGoalSet = true;
+                }
+                return;
+              }
+            }
+
+            const checkX = Math.floor(bot.entity.position.x);
+            const checkZ = Math.floor(bot.entity.position.z);
+            const botY = Math.floor(bot.entity.position.y);
+            let foundGroundY = null;
+
+            // Scan up from botY + 2 to look for a ceiling and then the top of it
+            let inSolid = false;
+            for (let y = botY + 2; y < 256; y++) {
+              const block = bot.blockAt(new Vec3(checkX, y, checkZ));
+              const isSolid =
+                block &&
+                block.name !== "air" &&
+                block.name !== "cave_air" &&
+                block.name !== "water" &&
+                block.name !== "lava";
+              if (isSolid) {
+                inSolid = true;
+              } else if (inSolid) {
+                foundGroundY = y;
+                break;
+              }
+            }
+            const playerY = Math.floor(targetEntity.position.y);
+            let targetY = playerY - 2;
+            if (foundGroundY !== null) {
+              targetY = Math.min(foundGroundY, targetY);
+            }
+            const yDiff = targetY - botY;
+
+            const mcData = bot.mcData;
+            const isScaffoldingItem = (item) => {
+              // ponytail: use name-based lookup so logs and other block-items are recognized
+              const block = mcData.blocksByName[item.name];
+              if (!block || block.boundingBox !== "block") return false;
+              const name = block.name;
+              if (
+                name.includes("chest") ||
+                name.includes("table") ||
+                name.includes("furnace") ||
+                name.includes("shulker") ||
+                name.includes("anvil") ||
+                name.includes("hopper") ||
+                name.includes("door") ||
+                name.includes("gate") ||
+                name.includes("bed") ||
+                name.includes("sapling") ||
+                name.includes("leaves")
+              )
+                return false;
+              return true;
+            };
+            const getScaffoldingCount = () =>
+              bot.inventory
+                .items()
+                .filter(isScaffoldingItem)
+                .reduce((sum, item) => sum + item.count, 0);
+
+            const minableBlocks = new Set([
+              "dirt",
+              "cobblestone",
+              "stone",
+              "andesite",
+              "diorite",
+              "granite",
+              "cobbled_deepslate",
+              "deepslate",
+              "tuff",
+              "sand",
+              "gravel",
+            ]);
+
+            let pillared = false;
+            if (yDiff > 0) {
+              const needed = yDiff + 2;
+              let currentCount = getScaffoldingCount();
+
+              if (currentCount < needed) {
+                const logs = bot.inventory
+                  .items()
+                  .filter(
+                    (i) =>
+                      i.name.includes("log") ||
+                      i.name.includes("wood") ||
+                      i.name.includes("stem") ||
+                      i.name.includes("hyphae"),
+                  );
+                if (logs.length > 0) {
+                  const plankItemId = mcData.itemsByName.oak_planks
+                    ? mcData.itemsByName.oak_planks.id
+                    : mcData.itemsByName.planks
+                      ? mcData.itemsByName.planks.id
+                      : null;
+                  if (plankItemId) {
+                    const recipe = bot.recipesFor(
+                      plankItemId,
+                      null,
+                      1,
+                      null,
+                    )[0];
+                    if (recipe) {
+                      try {
+                        // ponytail: craft all available logs into planks (each log gives 4 planks)
+                        const totalLogs = logs.reduce((sum, l) => sum + l.count, 0);
+                        const planksToCraft = Math.min(totalLogs * 4, 128);
+                        await bot.craft(recipe, planksToCraft, null);
+                        await sleep(500);
+                        currentCount = getScaffoldingCount();
+                      } catch (err) {
+                        console.log(
+                          `[CRAFTING] Failed to craft planks: ${err.message}`,
+                        );
+                      }
+                    }
+                  }
+                }
+              }
+
+              if (currentCount < needed) {
+                const minableIds = [];
+                for (const b of Object.values(mcData.blocks)) {
+                  if (minableBlocks.has(b.name)) minableIds.push(b.id);
+                }
+                if (minableIds.length > 0) {
+                  const candidatePositions = bot.findBlocks({
+                    matching: minableIds,
+                    maxDistance: 10,
+                    count: 80,
+                  });
+                  const standPos = bot.entity.position.floored();
+                  const safeCandidates = candidatePositions.filter((pos) => {
+                    if (
+                      pos.x === standPos.x &&
+                      pos.z === standPos.z &&
+                      pos.y <= standPos.y
+                    )
+                      return false;
+                    if (
+                      Math.abs(pos.x - standPos.x) <= 1 &&
+                      Math.abs(pos.z - standPos.z) <= 1 &&
+                      pos.y < standPos.y
+                    )
+                      return false;
+                    const block = bot.blockAt(pos);
+                    return block && block.type !== 0 && bot.canDigBlock(block);
+                  });
+                  // ponytail: tiered sort — prefer easy blocks (dirt, sand, gravel < 1s) over hard (cobble, stone)
+                  safeCandidates.sort((a, b) => {
+                    const ba = bot.blockAt(a);
+                    const bb = bot.blockAt(b);
+                    const ta = ba ? bot.digTime(ba) : 99999;
+                    const tb = bb ? bot.digTime(bb) : 99999;
+                    const easyA = ta < 1000 ? 0 : 1;
+                    const easyB = tb < 1000 ? 0 : 1;
+                    if (easyA !== easyB) return easyA - easyB;
+                    return (
+                      ta - tb ||
+                      a.distanceTo(bot.entity.position) -
+                        b.distanceTo(bot.entity.position)
+                    );
+                  });
+
+                  if (safeCandidates.length > 0) {
+                    for (const pos of safeCandidates) {
+                      if (getScaffoldingCount() >= needed) break;
+                      if (state.isFighting) break;
+                      // ponytail: check if target has moved closer during mining
+                      if (
+                        bot.entity &&
+                        targetEntity &&
+                        bot.entity.position.distanceTo(targetEntity.position) <=
+                          5
+                      ) {
+                        console.log(
+                          "[UNSTUCK] Target now within range during mining, stopping.",
+                        );
+                        break;
+                      }
+                      const block = bot.blockAt(pos);
+                      if (block && bot.canDigBlock(block)) {
+                        await safeDigWithTimeout(bot, block).catch(() => {});
+                        // Step toward dig spot and poll inventory until count increases
+                        if (bot.entity) {
+                          bot.lookAt(
+                            new Vec3(
+                              pos.x + 0.5,
+                              bot.entity.position.y,
+                              pos.z + 0.5,
+                            ),
+                          );
+                          bot.setControlState("forward", true);
+                          await sleep(600);
+                          bot.setControlState("forward", false);
+                          // Poll inventory until count reflects the mined block
+                          for (let poll = 0; poll < 15; poll++) {
+                            if (getScaffoldingCount() >= needed) break;
+                            await sleep(100);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              // Pillar up
+              let currentY = Math.floor(bot.entity.position.y);
+              if (
+                currentY < targetY &&
+                getScaffoldingCount() > 0 &&
+                !state.isFighting
+              ) {
+                pillared = true;
+                let failCount = 0;
+                while (currentY < targetY) {
+                  if (state.isFighting) {
+                    break;
+                  }
+                  // ponytail: check if target has moved closer during pillaring
+                  if (
+                    bot.entity &&
+                    targetEntity &&
+                    bot.entity.position.distanceTo(targetEntity.position) <= 5
+                  ) {
+                    console.log(
+                      "[UNSTUCK] Target now within range during pillaring, stopping.",
+                    );
+                    break;
+                  }
+
+                  const blockToPlace = bot.inventory
+                    .items()
+                    .find(isScaffoldingItem);
+                  if (!blockToPlace) {
+                    break;
+                  }
+
+                  // Clear ceiling and handle falling gravel/sand
+                  let cleared = false;
+                  for (let attempt = 0; attempt < 8; attempt++) {
+                    if (state.isFighting) break;
+                    const p = bot.entity.position.floored();
+                    let blockToDig = null;
+                    for (const yOffset of [3, 2, 1, 0]) {
+                      const blockPos = p.offset(0, yOffset, 0);
+                      const block = bot.blockAt(blockPos);
+                      if (
+                        block &&
+                        block.name !== "air" &&
+                        block.name !== "cave_air" &&
+                        block.name !== "water" &&
+                        block.name !== "lava"
+                      ) {
+                        if (bot.canDigBlock(block)) {
+                          blockToDig = block;
+                          break;
+                        }
+                      }
+                    }
+                    if (blockToDig) {
+                      await safeDigWithTimeout(bot, blockToDig).catch(() => {});
+                      await sleep(100);
+                    } else {
+                      cleared = true;
+                      break;
+                    }
+                  }
+
+                  if (state.isFighting) break;
+
+                  // Equip block and ensure it is in the hand before jumping
+                  let equipped = false;
+                  for (let i = 0; i < 5; i++) {
+                    if (
+                      bot.heldItem &&
+                      bot.heldItem.type === blockToPlace.type
+                    ) {
+                      equipped = true;
+                      break;
+                    }
+                    await bot.equip(blockToPlace, "hand").catch(() => {});
+                    await sleep(80);
+                  }
+                  if (!equipped) {
+                    await sleep(50);
+                  }
+
+                  // Jump and place underfoot
+                  const standPos = bot.entity.position.floored();
+                  const referenceBlock = bot.blockAt(standPos.offset(0, -1, 0));
+                  let placed = false;
+                  if (referenceBlock) {
+                    await bot.lookAt(standPos.offset(0.5, -1, 0.5), true);
+                    bot.setControlState("jump", true);
+                    await sleep(150); // wait to clear block boundary while rising
+
+                    // Keep jumping during placeBlock so the bot doesn't fall back into the space
+                    try {
+                      await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
+                      placed = true;
+                    } catch (err) {
+                      console.log(`[PILLARING] Place failed: ${err.message}`);
+                    }
+                    bot.setControlState("jump", false);
+
+                    // Wait for bot to land on the newly placed block
+                    for (let j = 0; j < 20; j++) {
+                      if (bot.entity.onGround) break;
+                      await sleep(50);
+                    }
+                    await sleep(200);
+
+                    // ponytail: if bot fell below stand position, place a block under current feet
+                    if (
+                      bot.entity &&
+                      bot.entity.position.y < standPos.y - 0.5
+                    ) {
+                      console.log(
+                        "[PILLARING] Bot fell! Placing catch block under current position...",
+                      );
+                      const fallPos = bot.entity.position.floored();
+                      const belowFall = bot.blockAt(fallPos.offset(0, -1, 0));
+                      if (belowFall) {
+                        try {
+                          await bot.lookAt(fallPos.offset(0.5, -1, 0.5), true);
+                          await bot
+                            .placeBlock(belowFall, new Vec3(0, 1, 0))
+                            .catch(() => {});
+                        } catch (_) {}
+                      }
+                    }
+
+                    if (bot.entity.position.y > currentY + 0.8) {
+                      currentY = Math.round(bot.entity.position.y);
+                      failCount = 0;
+                    } else {
+                      failCount++;
+                      if (failCount >= 3) {
+                        break;
+                      }
+                      await sleep(300); // wait a bit before retrying
+                    }
+                  }
+                }
+              }
+              if (!pillared) {
+                // Basic stuck recovery
+                const yaw = bot.entity.yaw;
+                const dx = -Math.sin(yaw);
+                const dz = -Math.cos(yaw);
+
+                let dug = false;
+                for (const yOffset of [1.6, 0.5, -0.5]) {
+                  const frontBlockPos = bot.entity.position.offset(
+                    dx,
+                    yOffset,
+                    dz,
+                  );
+                  const block = bot.blockAt(frontBlockPos);
+                  if (
+                    block &&
+                    block.type !== 0 &&
+                    block.name !== "air" &&
+                    bot.canDigBlock(block)
+                  ) {
+                    await safeDigWithTimeout(bot, block).catch(() => {});
+                    dug = true;
+                    break;
+                  }
+                }
+
+                if (!dug) {
+                  bot.setControlState("jump", true);
+                  bot.setControlState("back", true);
+                  await sleep(500);
+                  bot.setControlState("jump", false);
+                  bot.setControlState("back", false);
+
+                  const goLeft = Math.random() > 0.5;
+                  bot.setControlState(goLeft ? "left" : "right", true);
+                  await sleep(500);
+                  bot.setControlState(goLeft ? "left" : "right", false);
+                }
+              }
+
+              // Re-apply follow goal
+              if (state.followTarget && !state.isFighting) {
+                const followPlayer = bot.players[state.followTarget];
+                if (followPlayer?.entity) {
+                  bot.pathfinder.setMovements(getFollowMovements(bot));
+                  bot.pathfinder.setGoal(
+                    new goals.GoalFollow(followPlayer.entity, 4),
+                    true,
+                  );
+                  state.isFollowGoalSet = true;
+                }
+              }
+            }
+          } catch (e) {
+            console.error("[UNSTUCK] Recovery error:", e);
+          } finally {
+            state.isRecovering = false;
+          }
+        })();
+      }
+    }
+  } else {
+    state.stuckTicks = 0;
+    state.noPathTicks = 0;
+    state.lastPosition = null;
+  }
+
+  if (
+    state.isFighting ||
+    !state.followTarget ||
+    state.isBusy ||
+    state.isRecovering ||
+    state.landingCooldownTicks > 0
+  )
+    return;
+  const followPlayer = bot.players[state.followTarget];
+  const followEntity = followPlayer?.entity;
+
+  // Always update cached position when entity is in range
+  if (followEntity) {
+    state.lastKnownTargetPos = followEntity.position.clone();
+  }
+
   const botPos = bot.entity?.position;
   if (!botPos) return;
-  bot.lookAt(followTarget.position.offset(0, followTarget.height, 0));
-  const dist = botPos.distanceTo(followTarget.position);
-  if (dist < 4) { if (isFollowGoalSet) { bot.pathfinder.setGoal(null); isFollowGoalSet = false; } }
-  else if (dist > 5.5 && !isFollowGoalSet) {
-    bot.pathfinder.setGoal(new goals.GoalFollow(followTarget, 4), true);
-    isFollowGoalSet = true;
+
+  if (followEntity) {
+    // Entity in range — use GoalFollow for dynamic tracking
+    if (!isMoving && !isMining && !isBuilding && !state.isRecovering) {
+      bot.lookAt(followEntity.position.offset(0, followEntity.height, 0));
+    }
+    const hasFollowGoal =
+      bot.pathfinder.goal && bot.pathfinder.goal.entity === followEntity;
+    if (!hasFollowGoal || !state.isFollowGoalSet) {
+      console.log(
+        `[PhysicsTick] Applying GoalFollow for: ${state.followTarget}`,
+      );
+      bot.pathfinder.setMovements(getFollowMovements(bot));
+      bot.pathfinder.setGoal(new goals.GoalFollow(followEntity, 4), true);
+      state.isFollowGoalSet = true;
+    }
+  } else if (state.lastKnownTargetPos) {
+    // Entity out of chunk range — navigate toward last known position
+    const cached = state.lastKnownTargetPos;
+    const distToCached = botPos.distanceTo(cached);
+    const currentGoal = bot.pathfinder.goal;
+    const alreadyHeading =
+      currentGoal &&
+      currentGoal.constructor.name === "GoalNear" &&
+      Math.abs(currentGoal.x - Math.floor(cached.x)) < 2 &&
+      Math.abs(currentGoal.z - Math.floor(cached.z)) < 2;
+
+    if (!alreadyHeading && distToCached > 5) {
+      console.log(
+        `[PhysicsTick] Entity out of range. Moving toward last known pos: ${cached} (dist: ${distToCached.toFixed(1)})`,
+      );
+      bot.pathfinder.setMovements(getFollowMovements(bot));
+      bot.pathfinder.setGoal(
+        new goals.GoalNear(cached.x, cached.y, cached.z, 4),
+        false,
+      );
+      state.isFollowGoalSet = true;
+    }
+  } else {
+    console.log(
+      `[PhysicsTick] No entity and no cached position for: ${state.followTarget}`,
+    );
   }
 });
 
 bot.on("chat", async (sender, message) => {
   if (sender === bot.username) return;
-  lastUser = sender; // ponytail: update last user to match chat sender
-  console.log(`[CHAT] <${sender}> ${message}`);
+  bot.botState.lastUser = sender;
   const m = message.toLowerCase();
 
   if (m.includes("status")) {
     const botPos = bot.entity?.position;
-    const threats = botPos ? Object.values(bot.entities ?? {})
-      .filter(e => e?.isValid && threatOf(e) >= 2 && botPos.distanceTo(e.position) < 16).length : 0;
-    const state = isFighting ? "fighting!" : isBusy ? "busy" : followTarget ? "following" : "planning";
-    bot.chat(`HP:${bot.health?.toFixed(0)} Food:${bot.food} | ${state} | Sword:${hasSword()} | Threats:${threats}`);
+    const threats = botPos
+      ? Object.values(bot.entities ?? {}).filter(
+          (e) =>
+            e?.isValid &&
+            threatOf(e) >= 2 &&
+            botPos.distanceTo(e.position) < 16,
+        ).length
+      : 0;
+    const state = bot.botState;
+    const stateStr = state.isFighting
+      ? "fighting!"
+      : state.isBusy
+        ? "busy"
+        : state.followTarget
+          ? "following"
+          : "planning";
+    bot.chat(
+      `HP:${bot.health?.toFixed(0)} Food:${bot.food} | ${stateStr} | Sword:${hasSword(bot)} | Threats:${threats}`,
+    );
     return;
   }
 
@@ -582,36 +769,57 @@ bot.on("chat", async (sender, message) => {
 
   if (m.includes("follow") || m.includes("come here")) {
     const p = bot.players[sender];
-    if (!p?.entity) { bot.chat("Can't see you!"); return; }
+    if (!p?.entity) {
+      bot.chat("Can't see you!");
+      return;
+    }
     console.log(`[CHAT] Starting follow for ${sender}`);
-    const mv = getFollowMovements();
-    bot.pathfinder.setMovements(mv);
-    cancelCurrentTask();
-    followTarget = p.entity; isFollowGoalSet = true;
+
+    // Recover crafting table before following/moving back to user
+    await recoverNearbyCraftingTable(bot).catch(() => {});
+
+    bot.pathfinder.setMovements(getFollowMovements(bot));
+    cancelCurrentTask(bot);
+    bot.botState.followTarget = sender;
+    bot.botState.isFollowGoalSet = true;
     bot.chat("Following you!");
-    bot.pathfinder.setGoal(new goals.GoalFollow(followTarget, 4), true);
+    bot.pathfinder.setGoal(new goals.GoalFollow(p.entity, 4), true);
     return;
   }
 
-  if (m.includes("stop") || m.includes("stay")) { 
-    console.log(`[CHAT] Stop requested by ${sender}`);
-    cancelCurrentTask(); 
-    bot.chat("Stopping."); 
-    return; 
+  if (m.includes("stop") || m.includes("stay")) {
+    cancelCurrentTask(bot);
+    bot.chat("Stopping.");
+    return;
   }
 
-  // ponytail: generic block mining handler
-  if (/\b(get|fetch|mine|gather|collect|chop|harvest|give|bring|deliver)\b(?:\s+me)?\s*(?:(?:some|the|a|an)\s+)?(?:(\d+)\s+)?([a-z0-9_]+)\b/i.test(m)) {
-    const match = m.match(/\b(get|fetch|mine|gather|collect|chop|harvest|give|bring|deliver)\b(?:\s+me)?\s*(?:(?:some|the|a|an)\s+)?(?:(\d+)\s+)?([a-z0-9_]+)\b/i);
+  // Generic block mining handler
+  if (
+    /\b(get|fetch|mine|gather|collect|chop|harvest|give|bring|deliver)\b(?:\s+me)?\s*(?:(?:some|the|a|an)\s+)?(?:(\d+)\s+)?([a-z0-9_]+)\b/i.test(
+      m,
+    )
+  ) {
+    const match = m.match(
+      /\b(get|fetch|mine|gather|collect|chop|harvest|give|bring|deliver)\b(?:\s+me)?\s*(?:(?:some|the|a|an)\s+)?(?:(\d+)\s+)?([a-z0-9_]+)\b/i,
+    );
     const count = match[2] ? parseInt(match[2]) : 8;
     const blockType = match[3];
-    console.log(`[CHAT] Requested ${count} ${blockType} by ${sender}`);
-    fetchBlock(sender, blockType, count).catch(err => console.error(`[CHAT] fetchBlock failed:`, err));
+    fetchBlock(bot, sender, blockType, count).catch((err) =>
+      console.error("[CHAT] fetchBlock failed:", err),
+    );
     return;
   }
 
-  bot.chat(await getAIResponse(sender, message).catch(() => "My AI brain failed."));
+  bot.chat(
+    await getAIResponse(sender, message).catch(() => "My AI brain failed."),
+  );
 });
 
-bot.on("kicked", (r) => { console.error("Kicked:", r); process.exit(1); });
-bot.on("error",  (e) => { console.error("Error:", e);  process.exit(1); });
+bot.on("kicked", (r) => {
+  console.error("Kicked:", r);
+  process.exit(1);
+});
+bot.on("error", (e) => {
+  console.error("Error:", e);
+  process.exit(1);
+});
