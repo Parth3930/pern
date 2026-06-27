@@ -102,6 +102,20 @@ pub fn get_model_registry() -> Vec<ModelInfo> {
             estimated_memory: "1.1 GB".to_string(),
             recommended_for: "Local reasoning and logic tasks".to_string(),
         },
+        ModelInfo {
+            id: "ornith-1.0-9b-q4".to_string(),
+            display_name: "Ornith-1.0 9B Q4".to_string(),
+            file_name: "Ornith-1.0-9B-Q4_K_M.gguf".to_string(),
+            download_url: "https://huggingface.co/samuelchristlie/Ornith-1.0-9B-gguf/resolve/main/Ornith-1.0-9B-Q4_K_M.gguf".to_string(),
+            sha256: None,
+            tier: "balanced".to_string(),
+            default: false,
+            size_mb: 5120,
+            recommended_ram_gb: 16,
+            context_length: 262144,
+            estimated_memory: "5.1 GB".to_string(),
+            recommended_for: "Agentic coding and reasoning".to_string(),
+        },
 
     ]
 }

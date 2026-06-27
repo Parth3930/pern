@@ -444,9 +444,9 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     }
   };
 
-  const handleSend = async (overrideInput?: string) => {
+  const handleSend = async (overrideInput?: string, imageOpts?: any) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
-    if (!textToSend.trim() || isGenerating) return;
+    if (!textToSend.trim() && !imageOpts?.file || isGenerating) return;
 
     isVoiceSessionRef.current = overrideInput !== undefined;
 
@@ -460,6 +460,92 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     const trimmedInput = textToSend.trim();
     const cleanInputForCommand = trimmedInput.replace(/[.?!\s]+$/, "").trim();
     console.log("[CHAT] User prompt:", trimmedInput);
+
+    if (imageOpts?.task) {
+      const userMsg: ChatMessage = { 
+        role: "user", 
+        content: textToSend, 
+        image_url: imageOpts.previewUrl 
+      } as any;
+      
+      const assistantMsg: ChatMessage = {
+        role: "assistant",
+        content: "Processing image...",
+        is_processing_image: true,
+      } as any;
+      
+      const nextMsgs = [...messagesRef.current, userMsg, assistantMsg];
+      messagesRef.current = nextMsgs;
+      setMessages(nextMsgs);
+      setInput("");
+      setIsGenerating(true);
+      setCurrentTask(null);
+      
+      try {
+        const { removeBg, png, upscale } = imageOpts.task;
+        let sourceBlob: Blob = imageOpts.file;
+        if (removeBg) {
+          const imgly = await import('@imgly/background-removal');
+          const removeBackground = imgly.default || (imgly as any).removeBackground;
+          if (typeof removeBackground === 'function') {
+            sourceBlob = await removeBackground(sourceBlob);
+            localStorage.setItem("pern_bg_model_downloaded", "true");
+          } else {
+            throw new Error("removeBackground is not a function.");
+          }
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = async () => {
+            if (!removeBg) {
+              await new Promise(resolve => setTimeout(resolve, 1200));
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = upscale ? img.width * 2 : img.width;
+            canvas.height = upscale ? img.height * 2 : img.height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const mimeType = png || removeBg ? "image/png" : "image/jpeg";
+              const finalUrl = canvas.toDataURL(mimeType, 0.8);
+              
+              const finalAssistantMsg: ChatMessage = {
+                role: "assistant",
+                content: "Here is your processed image:",
+                image_url: finalUrl,
+                is_image_result: true,
+                source_file_name: imageOpts.file.name
+              } as any;
+              
+              const finalMsgs = [...messagesRef.current.slice(0, -1), finalAssistantMsg];
+              messagesRef.current = finalMsgs;
+              setMessages(finalMsgs);
+            }
+            setIsGenerating(false);
+            setCurrentTask(null);
+          };
+          img.onerror = () => {
+            setIsGenerating(false);
+            setCurrentTask(null);
+          };
+          if (typeof ev.target?.result === "string") img.src = ev.target.result;
+        };
+        reader.onerror = () => {
+          setIsGenerating(false);
+          setCurrentTask(null);
+        };
+        reader.readAsDataURL(sourceBlob);
+      } catch (e) {
+        console.error("Image processing error", e);
+        const finalMsgs = [...messagesRef.current.slice(0, -1), { role: "assistant", content: "Failed to process image." } as ChatMessage];
+        messagesRef.current = finalMsgs;
+        setMessages(finalMsgs);
+        setIsGenerating(false);
+        setCurrentTask(null);
+      }
+      return;
+    }
 
     if (/^(?:open\s+|show\s+)?(?:up\s+)?(?:my\s+)?todo(s|(?:\s+list))?$/i.test(cleanInputForCommand)) {
       if (setShowTodos) {
@@ -519,7 +605,11 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     emptyResponseRetryCountRef.current = 0;
     lastToolResultRef.current = null;
 
-    const userMsg: ChatMessage = { role: "user", content: textToSend };
+    const userMsg: ChatMessage = { 
+      role: "user", 
+      content: textToSend, 
+      ...(imageOpts?.previewUrl ? { image_url: imageOpts.previewUrl } : {}) 
+    } as any;
     const nextMessages = [...messagesRef.current, userMsg];
 
     let memoryForTurn = userMemory;
@@ -575,7 +665,11 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       }
 
       awaitingModelResponseRef.current = true;
-      await api.sendChatMessage(config.selected_model, historyResult.messages);
+      await api.sendChatMessage(config.selected_model, historyResult.messages.map(m => ({ 
+        role: m.role, 
+        content: m.content, 
+        memory_tool_results: m.memory_tool_results 
+      })));
     } catch (e) {
       console.error("[CHAT][DIAG] sendChatMessage FAILED:", e);
       awaitingModelResponseRef.current = false;
@@ -640,7 +734,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         isSupported={isSupported}
         startListening={startListening}
         stopListening={stopListening}
-        onSend={() => handleSend()}
+        onSend={(opts) => handleSend(undefined, opts)}
       />
     </div>
   );

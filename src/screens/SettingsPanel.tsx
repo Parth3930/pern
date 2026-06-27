@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { api, AppConfig, ModelInfo } from "../lib/api";
-import { FolderOpen, ChevronRight, ChevronDown, Loader2, Cpu, Trash2, Download, Mic, CheckSquare } from "lucide-react";
+import { FolderOpen, ChevronRight, ChevronDown, Loader2, Cpu, Trash2, Download, Mic, CheckSquare, Image as ImageIcon } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 
 import WhatsAppSettings from "../integrations/whatsapp/Settings";
@@ -24,6 +24,13 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   const [isWindows, setIsWindows] = useState(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [showTodosOverlay, setShowTodosOverlay] = useState(false);
+
+  const [bgRemovalEnabled, setBgRemovalEnabled] = useState(() => {
+    const val = localStorage.getItem("pern_bg_removal_enabled");
+    return val === null ? false : val === "true";
+  });
+  const [imageExpanded, setImageExpanded] = useState(false);
+  const bgModelDownloaded = localStorage.getItem("pern_bg_model_downloaded") === "true";
 
   const [modelDir, setModelDir] = useState(config.model_dir);
   const [smtpHost, setSmtpHost] = useState(config.email_smtp_host);
@@ -250,6 +257,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
       localStorage.setItem("pern_wakeword_enabled", String(wakeWordEnabled));
       localStorage.setItem("pern_wakeword_keyword", wakeWordKeyword);
       localStorage.setItem("pern_tts_voice", selectedVoice);
+      localStorage.setItem("pern_bg_removal_enabled", String(bgRemovalEnabled));
 
       await api.chooseModelDir(modelDir);
       await api.saveEmailConfig(smtpHost, smtpPort, senderEmail, smtpPassword);
@@ -305,6 +313,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
               </div>
             </div>
           )}
+
         </section>
         <WhatsAppSettings config={config} />
 
@@ -344,22 +353,19 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
         <MemorySettings />
 
-        <div
-          className="settings-item"
-          style={{
-            cursor: "pointer",
-            marginTop: "0.5rem"
-          }}
-          onClick={() => setShowTodosOverlay(true)}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+          <div
+            className="section-header clickable"
+            onClick={() => setShowTodosOverlay(true)}
+            style={{ cursor: "pointer" }}
+          >
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <CheckSquare size={14} />
-              <span className="settings-label" style={{ margin: 0, fontWeight: 600 }}>Todos & Reminders</span>
+              <span>Todos & Reminders</span>
             </div>
             <ChevronRight size={14} />
           </div>
-        </div>
+        </section>
 
         <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
           <div
@@ -444,6 +450,46 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
                   </select>
                 </div>
               )}
+            </div>
+          )}
+        </section>
+
+        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+          <div
+            className={`section-header clickable ${imageExpanded ? "active" : ""}`}
+            onClick={() => setImageExpanded(!imageExpanded)}
+            style={{ cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <ImageIcon size={14} />
+              <span>Image Processing</span>
+            </div>
+            {imageExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </div>
+
+          {imageExpanded && (
+            <div className="settings-list animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div className="settings-item">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                    <label className="settings-label" style={{ margin: 0 }}>Background Removal</label>
+                    <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
+                      Locally remove image backgrounds
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: bgModelDownloaded ? "var(--success, #10b981)" : "var(--text-secondary)", marginTop: "4px" }}>
+                      Model Status: {bgModelDownloaded ? "Downloaded" : "Not Downloaded (Will download ~40MB on first use)"}
+                    </span>
+                  </div>
+                  <label className="settings-switch">
+                    <input
+                      type="checkbox"
+                      checked={bgRemovalEnabled}
+                      onChange={(e) => setBgRemovalEnabled(e.target.checked)}
+                    />
+                    <span className="settings-slider"></span>
+                  </label>
+                </div>
+              </div>
             </div>
           )}
         </section>

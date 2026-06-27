@@ -1,7 +1,7 @@
 {
   "name": "pern",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Offline-First Local AI Desktop & Mobile Assistant built with Tauri v2, React 19, TypeScript, and Rust. A private, secure personal assistant featuring deep integrations with WhatsApp, Discord, Email, Projects, and CLI agents.",
   "author": "Parth3930",
@@ -40,6 +40,7 @@
     "android:build": "tauri android build --target aarch64"
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.7.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2",

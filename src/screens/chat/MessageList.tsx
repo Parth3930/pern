@@ -1,6 +1,6 @@
 import React from "react";
 import logo from "../../assets/logo.png";
-import { CheckCircle2, Database, Trash2 } from "lucide-react";
+import { CheckCircle2, Database, Trash2, Download } from "lucide-react";
 import { ChatMessage, MemoryToolResult } from "../../lib/api";
 import { stripToolCalls } from "../chatLogic";
 
@@ -117,7 +117,30 @@ export const MessageList: React.FC<MessageListProps> = ({
   const renderMessageContent = (
     content: string,
     isLastAssistantMsg: boolean,
+    msgData?: any
   ) => {
+    if (msgData?.is_processing_image) {
+      return (
+        <div className="thinking-indicator" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Processing image</span>
+          <div className="thinking-dot"></div>
+          <div className="thinking-dot"></div>
+          <div className="thinking-dot"></div>
+        </div>
+      );
+    }
+
+    if (msgData?.is_image_result && msgData?.image_url) {
+      return (
+        <div style={{ position: "relative", display: "inline-block", marginTop: "4px" }}>
+          <img src={msgData.image_url} alt="result" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 8, display: "block" }} />
+          <a href={msgData.image_url} download={`processed_${msgData.source_file_name || 'image'}`} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "rgba(0,0,0,0.65)", color: "white", width: 44, height: 44, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", backdropFilter: "blur(4px)" }} title="Download Image">
+            <Download size={22} />
+          </a>
+        </div>
+      );
+    }
+
     const cleanContent = stripToolCalls(content);
 
     // Always show cleanContent if it exists, regardless of tool calls
@@ -176,7 +199,7 @@ export const MessageList: React.FC<MessageListProps> = ({
           const isLastAssistantMsg = i === actualLastAssistantIdx;
           const assistantContent =
             msg.role === "assistant"
-              ? renderMessageContent(msg.content, isLastAssistantMsg)
+              ? renderMessageContent(msg.content, isLastAssistantMsg, msg)
               : null;
 
           const hasMemoryResults =
@@ -191,6 +214,9 @@ export const MessageList: React.FC<MessageListProps> = ({
           return (
             <div key={i} className={`message ${msg.role}`}>
               {msg.role === "assistant" ? assistantContent : cleanUserMessageForDisplay(msg.content)}
+              {msg.role === "user" && (msg as any).image_url && (
+                <img src={(msg as any).image_url} alt="attachment" style={{marginTop: 8, maxWidth: "100%", maxHeight: 200, borderRadius: 8, objectFit: 'contain', display: 'block'}} />
+              )}
               {hasMemoryResults && (
                 <div className="memory-tool-results">
                   {msg.memory_tool_results!.map((m, idx) => (
