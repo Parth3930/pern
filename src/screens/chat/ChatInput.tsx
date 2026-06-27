@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
-import { Send, Mic, MicOff, Plus, Download, Loader2, X } from "lucide-react";
+import { Send, Mic, MicOff, Plus, X } from "lucide-react";
 
 interface ChatInputProps {
   input: string;

@@ -488,7 +488,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
           const imgly = await import('@imgly/background-removal');
           const removeBackground = imgly.default || (imgly as any).removeBackground;
           if (typeof removeBackground === 'function') {
-            sourceBlob = await removeBackground(sourceBlob);
+            sourceBlob = await (removeBackground as any)(sourceBlob);
             localStorage.setItem("pern_bg_model_downloaded", "true");
           } else {
             throw new Error("removeBackground is not a function.");
