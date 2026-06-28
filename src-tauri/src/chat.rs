@@ -16,11 +16,28 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct OpenAIToolCallFunction {
+    pub name: Option<String>,
+    pub arguments: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct OpenAIToolCall {
+    pub index: usize,
+    pub id: Option<String>,
+    pub r#type: Option<String>,
+    pub function: Option<OpenAIToolCallFunction>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct OpenAIDelta {
     pub content: Option<String>,
+    pub tool_calls: Option<Vec<OpenAIToolCall>>,
 }
 
 #[derive(Debug, Deserialize)]

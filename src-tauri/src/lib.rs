@@ -45,6 +45,7 @@ async fn submit_external_reply(
 async fn send_chat_message(
     model_id: String,
     messages: Vec<ChatMessage>,
+    tools: Option<serde_json::Value>,
     window: tauri::Window,
 ) -> Result<(), String> {
     let msg_count = messages.len();
@@ -53,6 +54,13 @@ async fn send_chat_message(
     println!("[CHAT][DIAG] Message roles: {:?}", messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>());
     if let Some(sys) = messages.first() {
         println!("[CHAT][DIAG] System prompt length: {} chars, preview: {}...", sys.content.len(), &sys.content[..sys.content.len().min(150)]);
+        let text_tools: Vec<&str> = sys.content.lines().filter(|l| l.starts_with("- ") && l.contains("->")).collect();
+        if !text_tools.is_empty() {
+            println!("[CHAT][DIAG] Injected tools: {:?}", text_tools.iter().map(|t| t.split("(").next().unwrap_or("").trim_start_matches("- ")).collect::<Vec<_>>());
+        }
+    }
+    if let Some(usr) = messages.iter().find(|m| m.role == "user") {
+        println!("[CHAT][DIAG] User message: {}", usr.content);
     }
     let client = Client::new();
     let req_body = ChatRequest {
@@ -62,6 +70,7 @@ async fn send_chat_message(
         stream: true,
         max_tokens: None,
         stop: None,
+        tools,
     };
 
     let mut attempts = 0;
@@ -135,6 +144,8 @@ async fn send_chat_message(
     let mut stream = res.bytes_stream();
     let mut buffer = Vec::new();
     let mut done = false;
+    let mut bot_response = String::new();
+    let mut accumulated_tools: std::collections::BTreeMap<usize, (String, String)> = std::collections::BTreeMap::new();
 
     while let Some(chunk_res) = stream.next().await {
         if done {
@@ -155,8 +166,24 @@ async fn send_chat_message(
                             break;
                         }
                         if let Ok(res) = serde_json::from_str::<OpenAIStreamChunk>(data) {
-                            if let Some(content) = res.choices.first().and_then(|c| c.delta.content.as_ref()) {
-                                let _ = window.emit("chat-token", content);
+                            if let Some(c) = res.choices.first() {
+                                if let Some(content) = &c.delta.content {
+                                    bot_response.push_str(content);
+                                    let _ = window.emit("chat-token", content);
+                                }
+                                if let Some(tcs) = &c.delta.tool_calls {
+                                    for tc in tcs {
+                                        let entry = accumulated_tools.entry(tc.index).or_insert_with(|| (String::new(), String::new()));
+                                        if let Some(f) = &tc.function {
+                                            if let Some(name) = &f.name {
+                                                entry.0.push_str(name);
+                                            }
+                                            if let Some(args) = &f.arguments {
+                                                entry.1.push_str(args);
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -170,7 +197,36 @@ async fn send_chat_message(
         }
     }
 
-    println!("[CHAT][DIAG] Emitting chat-complete");
+    if !accumulated_tools.is_empty() {
+        if !bot_response.ends_with('\n') && !bot_response.is_empty() {
+            bot_response.push('\n');
+            let _ = window.emit("chat-token", "\n");
+        }
+        for (_, (name, args)) in accumulated_tools {
+            let mut formatted_args = String::new();
+            if let Ok(parsed_args) = serde_json::from_str::<serde_json::Value>(&args) {
+                if let Some(obj) = parsed_args.as_object() {
+                    let mut pairs = Vec::new();
+                    for (k, v) in obj {
+                        let v_str = if v.is_string() {
+                            format!("\"{}\"", v.as_str().unwrap().replace("\"", "\\\""))
+                        } else {
+                            v.to_string()
+                        };
+                        pairs.push(format!("{}={}", k, v_str));
+                    }
+                    formatted_args = pairs.join(", ");
+                }
+            } else {
+                formatted_args = args;
+            }
+            let line = format!("- {}({})\n", name, formatted_args);
+            bot_response.push_str(&line);
+            let _ = window.emit("chat-token", &line);
+        }
+    }
+
+    println!("[CHAT][DIAG] Emitting chat-complete. Bot answered: {}", bot_response);
     let _ = window.emit("chat-complete", ());
     println!("[CHAT][DIAG] Command finished OK");
     Ok(())

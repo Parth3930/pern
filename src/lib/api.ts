@@ -206,8 +206,8 @@ export const api = {
     invoke<void>("set_first_run_completed", { completed }),
   downloadModel: (modelId: string) =>
     invoke<void>("download_model", { modelId }),
-  sendChatMessage: (modelId: string, messages: ChatMessage[]) =>
-    invoke<void>("send_chat_message", { modelId, messages }),
+  sendChatMessage: (modelId: string, messages: ChatMessage[], tools?: any) =>
+    invoke<void>("send_chat_message", { modelId, messages, tools }),
   updateUserMemory: (memory: UserMemory) =>
     invoke<void>("update_user_memory", { memory }),
   getUserMemory: () => invoke<UserMemory>("get_user_memory"),

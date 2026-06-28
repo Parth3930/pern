@@ -21,14 +21,14 @@ export interface RuleDefinition {
 export const TOOLS = [
   {
     name: "launch_app",
-    category: "system",
-    description: "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\").",
+    category: "apps",
+    description: "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\").",
     params: ["app_name"],
-    signature: "- launch_app(app_name: string) -> Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\")."
+    signature: "- launch_app(app_name: string) -> Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\")."
   },
   {
     name: "close_app",
-    category: "system",
+    category: "apps",
     description: "Closes an app by name.",
     params: ["app_name"],
     signature: "- close_app(app_name: string) -> Closes an app by name."
@@ -273,14 +273,14 @@ export const TOOLS = [
   },
   {
     name: "join_minecraft_world",
-    category: "system",
+    category: "minecraft",
     description: "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
     params: ["port", "version"],
     signature: "- join_minecraft_world(port?: number, version?: string) -> Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4')."
   },
   {
     name: "disconnect_minecraft_world",
-    category: "system",
+    category: "minecraft",
     description: "Disconnects the Pern bot player from the Minecraft world.",
     params: [],
     signature: "- disconnect_minecraft_world() -> Disconnects the Pern bot player from the Minecraft world."
@@ -364,19 +364,19 @@ export const FEW_SHOTS = [
     text: "User Request: what is the capital of France?\\nPlan:\\n- conversational()"
   },
   {
-    categories: ["system"],
+    categories: ["apps"],
     text: "User Request: open chrome and notepad\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- launch_app(app_name=\"notepad\")"
   },
   {
-    categories: ["system"],
+    categories: ["apps"],
     text: "User Request: open both\\nPlan:\\n- conversational()"
   },
   {
-    categories: ["system"],
-    text: "User Request: open whatsapp and close notepad\\nPlan:\\n- launch_app(app_name=\"whatsapp\")\\n- close_app(app_name=\"notepad\")"
+    categories: ["apps"],
+    text: "User Request: open calculator and close notepad\\nPlan:\\n- launch_app(app_name=\"calculator\")\\n- close_app(app_name=\"notepad\")"
   },
   {
-    categories: ["system"],
+    categories: ["apps"],
     text: "User Request: close chrome and notepad\\nPlan:\\n- close_app(app_name=\"chrome\")\\n- close_app(app_name=\"notepad\")"
   },
   {
@@ -389,7 +389,7 @@ export const FEW_SHOTS = [
   },
   {
     categories: ["whatsapp"],
-    text: "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\\nPlan:\\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\\n- launch_app(app_name=\"whatsapp\")\\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)"
+    text: "User Request: ask rahul how he doing on whatsapp\nPlan:\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Hey Rahul, how are you doing?\")"
   },
   {
     categories: ["discord"],
@@ -414,6 +414,10 @@ export const FEW_SHOTS = [
   {
     categories: ["system", "discord"],
     text: "User Request: open chrome, check status of cli agents, and set my discord status to idle with activity away\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- get_cli_agents_status()\\n- set_discord_status(status=\"idle\", activity=\"away\")"
+  },
+  {
+    categories: ["whatsapp"],
+    text: "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\\nPlan:\\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\\n- launch_app(app_name=\"whatsapp\")\\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)"
   },
   {
     categories: ["whatsapp"],
@@ -549,6 +553,10 @@ export const RULES = [
   {
     text: "14. AMBIGUOUS OR MISSING CONTEXT: If a request is ambiguous or missing required parameters (e.g., \"message Bob\" without a message body, or \"send the same message\" when there is no previous message in context, or \"open both\" when no apps have been launched), DO NOT guess, assume, or hallucinate parameters from the few-shot examples. Instead, map it to: Plan:\\n- conversational() so that the assistant can ask the user for clarification.",
     categories: []
+  },
+  {
+    text: "15. STRICT NO HALLUCINATION: Do NOT generate unrequested actions. End the plan immediately after the user's requested actions. NEVER make up tools like ask_what_is_rajans_status().",
+    categories: []
   }
 ] as const;
 
@@ -566,7 +574,7 @@ export const DISCORD_TOOLS_WITH_GUILD_ID = [
 ] as const;
 
 export const TOOL_DESCRIPTIONS = {
-  "launch_app": "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\").",
+  "launch_app": "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\").",
   "close_app": "Closes an app by name.",
   "send_whatsapp_message": "Sends WhatsApp message.",
   "set_whatsapp_auto_reply": "Enables (true) or disables (false) WhatsApp auto reply for recipient.",

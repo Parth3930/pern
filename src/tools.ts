@@ -52,7 +52,7 @@ export function cleanToolName(tool: string): string {
     return "send_to_cli_agent";
   if (t === "whatsapp_message" || t === "send_whatsapp")
     return "send_whatsapp_message";
-  if (/^send_message_to_/.test(t)) return "send_whatsapp_message";
+  if (/^send_message_to_/.test(t) || /^ask_/.test(t)) return "send_whatsapp_message";
   if (t === "email" || t === "send_mail") return "send_email";
   if (t === "whatsapp_auto_reply" || t === "whatsapp_auto")
     return "set_whatsapp_auto_reply";
@@ -337,19 +337,31 @@ export function isToolName(value: unknown): value is ToolName {
 
 /** Get the unified action few-shot examples as a string. */
 export function getActionFewShots(categories?: string[]): string {
-  let examples: typeof FEW_SHOTS[number][];
   if (!categories || categories.length === 0) {
-    examples = FEW_SHOTS as unknown as typeof FEW_SHOTS[number][];
-  } else {
-    examples = FEW_SHOTS.filter(
-      (e) =>
-        e.categories.length === 0 ||
-        e.categories.some((cat) => categories.includes(cat)),
-    ) as unknown as typeof FEW_SHOTS[number][];
+    return FEW_SHOTS.slice(0, 4).map((e) => e.text).join("\n\n");
   }
-  // Limit few-shots to avoid exceeding small model context windows (e.g. 4096 tokens)
-  return examples
-    .slice(0, 4)
-    .map((e) => e.text)
-    .join("\n\n");
+  
+  const selected = [];
+  const added = new Set<string>();
+
+  // 1. Force at least one example for each requested category
+  for (const cat of categories) {
+    const example = FEW_SHOTS.find(e => e.categories.includes(cat) && !added.has(e.text));
+    if (example) {
+      selected.push(example);
+      added.add(example.text);
+    }
+  }
+
+  // 2. Fill the remaining slots up to 4 with other matching examples,
+  // but ONLY include category-specific ones (ignore length === 0 filler)
+  for (const e of FEW_SHOTS) {
+    if (selected.length >= 4) break;
+    if (!added.has(e.text) && e.categories.some(c => categories.includes(c))) {
+      selected.push(e);
+      added.add(e.text);
+    }
+  }
+
+  return selected.map((e) => e.text).join("\n\n");
 }
