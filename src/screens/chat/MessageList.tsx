@@ -1,6 +1,6 @@
 import React from "react";
 import logo from "../../assets/logo.png";
-import { CheckCircle2, Database, Trash2, Download } from "lucide-react";
+import { CheckCircle2, Database, Trash2, Download, Folder } from "lucide-react";
 import { ChatMessage, MemoryToolResult } from "../../lib/api";
 import { stripToolCalls } from "../chatLogic";
 import { PlannerView } from "./PlannerView";
@@ -200,14 +200,6 @@ export const MessageList: React.FC<MessageListProps> = ({
           if (msg.role === "system" && msg.content.startsWith("Tool Result:"))
             return null;
 
-          if (msg.harness_plan) {
-            return (
-              <div key={i} style={{ padding: "0 4px", margin: "4px 0" }}>
-                <PlannerView plan={msg.harness_plan} />
-              </div>
-            );
-          }
-
           const isLastAssistantMsg = i === actualLastAssistantIdx;
           const assistantContent =
             msg.role === "assistant"
@@ -219,24 +211,46 @@ export const MessageList: React.FC<MessageListProps> = ({
             msg.memory_tool_results &&
             msg.memory_tool_results.length > 0;
 
-          if (msg.role === "assistant" && !assistantContent && !hasMemoryResults) {
+          if (msg.role === "assistant" && !assistantContent && !hasMemoryResults && !(msg as any).harness_plan) {
             return null;
           }
 
+          const isAssistantBubble = msg.role === "assistant";
+          const hasContentToRender = (isAssistantBubble && assistantContent) || (!isAssistantBubble && msg.content) || (msg as any).image_url;
+
           return (
-            <div key={i} className={`message ${msg.role}`}>
-              {msg.role === "assistant" ? assistantContent : cleanUserMessageForDisplay(msg.content)}
-              {msg.role === "user" && (msg as any).image_url && (
-                <img src={(msg as any).image_url} alt="attachment" style={{marginTop: 8, maxWidth: "100%", maxHeight: 200, borderRadius: 8, objectFit: 'contain', display: 'block'}} />
-              )}
-              {hasMemoryResults && (
-                <div className="memory-tool-results">
-                  {msg.memory_tool_results!.map((m, idx) => (
-                    <MemoryResultCard key={idx} result={m} />
-                  ))}
+            <React.Fragment key={i}>
+              {(msg as any).harness_plan && (
+                <div style={{ padding: "0 4px", margin: "4px 0" }}>
+                  <PlannerView plan={(msg as any).harness_plan} />
                 </div>
               )}
-            </div>
+              {hasContentToRender && (
+                <div className={`message ${msg.role}`}>
+                  {msg.role === "assistant" ? assistantContent : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      {(msg as any).project_name && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.7rem", background: "rgba(0,0,0,0.1)", padding: "2px 8px", borderRadius: "10px", width: "fit-content", color: "inherit", opacity: 0.8 }}>
+                          <Folder size={10} /> {(msg as any).project_name}
+                        </div>
+                      )}
+                      <span>{(msg as any).display_content || cleanUserMessageForDisplay(msg.content)}</span>
+                    </div>
+                  )}
+                  {msg.role === "user" && (msg as any).image_url && (
+                    <img src={(msg as any).image_url} alt="attachment" style={{marginTop: 8, maxWidth: "100%", maxHeight: 200, borderRadius: 8, objectFit: 'contain', display: 'block'}} />
+                  )}
+
+                  {hasMemoryResults && (
+                    <div className="memory-tool-results">
+                      {msg.memory_tool_results!.map((m, idx) => (
+                        <MemoryResultCard key={idx} result={m} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </React.Fragment>
           );
         })
       )}

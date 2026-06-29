@@ -16,6 +16,7 @@ export async function executeSingleTool(
     successfulWhatsAppRecipients: string[];
     successfulWhatsAppMessageRef: React.MutableRefObject<string>;
     needsConfigRefreshRef: React.MutableRefObject<boolean>;
+    projectName?: string;
   }
 ): Promise<ToolResult> {
   let result: ToolResult;
@@ -581,6 +582,32 @@ export async function executeSingleTool(
       result = { ok: true, message: msg };
     } catch (e) {
       result = { ok: false, error: getErrorMessage(e) };
+    }
+  } else if (tc.tool === "read_file") {
+    const path = getStringArg(tc.args, "path");
+    const projectName = context.projectName || "Pern";
+    if (!path) {
+      result = { ok: false, error: "File path missing." };
+    } else {
+      try {
+        const msg = await api.read_file(path, projectName);
+        result = { ok: true, message: msg };
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    }
+  } else if (tc.tool === "list_dir") {
+    const path = getStringArg(tc.args, "path");
+    const projectName = context.projectName || "Pern";
+    if (!path) {
+      result = { ok: false, error: "Directory path missing." };
+    } else {
+      try {
+        const msg = await api.list_dir(path, projectName);
+        result = { ok: true, message: msg };
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
     }
   } else {
     result = {

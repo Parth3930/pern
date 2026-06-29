@@ -363,14 +363,39 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setIsGenerating(true);
     const followUpMessages: ChatMessage[] = [];
     const memoryResults: import("../../lib/api").MemoryToolResult[] = [];
+    const lastUserMsg = messagesRef.current.slice().reverse().find((m) => m.role === "user") as any;
     const context = {
       successfulWhatsAppRecipients: [] as string[],
       successfulWhatsAppMessageRef: { current: "" },
       needsConfigRefreshRef: { current: false },
+      projectName: lastUserMsg?.project_name,
     };
 
-    for (const tc of toolCalls) {
+    const plan: import("./taskPlanner").TaskPlan = {
+      id: `plan-${Date.now()}`,
+      originalGoal: "Execute Tools",
+      steps: toolCalls.map((tc, idx) => ({
+        id: `step-${idx}`,
+        label: getCurrentTaskLabel(tc),
+        category: "system",
+        prompt: tc.tool,
+        status: "pending"
+      }))
+    };
+
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i];
       setCurrentTask(getCurrentTaskLabel(tc));
+      
+      plan.steps[i].status = "running";
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastAssIdx = next.map(m => m.role).lastIndexOf("assistant");
+        if (lastAssIdx !== -1) {
+          next[lastAssIdx] = { ...next[lastAssIdx], harness_plan: { ...plan } };
+        }
+        return next;
+      });
 
       try {
         const result = await executeSingleTool(tc, context);
@@ -391,6 +416,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
             .recordToolUsage(tc.tool, JSON.stringify(tc.args).slice(0, 200))
             .catch((e) => console.warn("[LEARNER] Failed to record usage:", e));
         }
+        plan.steps[i].status = "done";
       } catch (error) {
         console.error(`[TOOL] Tool "${tc.tool}" threw an error:`, error);
         const reason = getErrorMessage(error);
@@ -402,7 +428,17 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
           role: "assistant",
           content: "[TOOL_RESULT] " + errorMessage,
         });
+        plan.steps[i].status = "error";
       }
+      
+      setMessages((prev) => {
+        const next = [...prev];
+        const lastAssIdx = next.map(m => m.role).lastIndexOf("assistant");
+        if (lastAssIdx !== -1) {
+          next[lastAssIdx] = { ...next[lastAssIdx], harness_plan: { ...plan } };
+        }
+        return next;
+      });
     }
 
     setCurrentTask(null);
@@ -419,12 +455,12 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       const nextMessages = [...prev];
       const lastAssIdx = nextMessages.map((m) => m.role).lastIndexOf("assistant");
       if (lastAssIdx !== -1) {
-        const resultsText = followUpMessages.map((m) => m.content).join("\n");
         nextMessages[lastAssIdx] = {
           ...nextMessages[lastAssIdx],
-          content: nextMessages[lastAssIdx].content.trim() + "\n" + resultsText,
+          content: nextMessages[lastAssIdx].content.trim(),
           memory_tool_results:
             memoryResults.length > 0 ? memoryResults : undefined,
+          harness_plan: plan,
         };
       } else {
         // No prior assistant message: splice tool results into the last
@@ -460,10 +496,10 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         const lastToolResults = followUpMessages.map(m => m.content).join("\n");
         const lastUserMsg = [...messagesRef.current].reverse().find(m => m.role === "user");
         const minimalMessages: ChatMessage[] = [
-          { role: "system", content: "You are Pern. Summarize what you just did in one short sentence." },
+          { role: "system", content: "You are Pern. The user asked a question or requested an action. You used tools to gather info or do the action. Answer the user based on the tool results. If the user asks what a project is or what's in it, summarize its purpose and features from the README instead of just listing files. Keep it concise." },
           { role: "user", content: lastUserMsg?.content || "Done?" },
           { role: "assistant", content: lastToolResults },
-          { role: "user", content: "Done. Tell the user in one sentence." },
+          { role: "user", content: "Now respond to my original request using the tool results above." },
         ];
         await api.sendChatMessage(configRef.current.selected_model, minimalMessages);
         return;
@@ -516,14 +552,14 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setActivePlan(null); // Clear floating planner since it's now in chat history
   };
 
-  const handleSend = async (overrideInput?: string, imageOpts?: any) => {
+  const handleSend = async (overrideInput?: string, imageOpts?: any, isVoice?: boolean, projectName?: string, displayContent?: string) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
     if (!textToSend.trim() && !imageOpts?.file || isGenerating) return;
 
     // Clear any previous plan UI
     setActivePlan(null);
 
-    isVoiceSessionRef.current = overrideInput !== undefined;
+    isVoiceSessionRef.current = !!isVoice;
 
     if (typeof lastSpokenRef !== "undefined") {
       lastSpokenRef.current = null;
@@ -540,7 +576,9 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       const userMsg: ChatMessage = { 
         role: "user", 
         content: textToSend, 
-        image_url: imageOpts.previewUrl 
+        ...(imageOpts?.previewUrl ? { image_url: imageOpts.previewUrl } : {}),
+        ...(projectName ? { project_name: projectName } : {}),
+        ...(displayContent ? { display_content: displayContent } : {})
       } as any;
       
       const assistantMsg: ChatMessage = {
@@ -684,7 +722,9 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     const userMsg: ChatMessage = { 
       role: "user", 
       content: textToSend, 
-      ...(imageOpts?.previewUrl ? { image_url: imageOpts.previewUrl } : {}) 
+      ...(imageOpts?.previewUrl ? { image_url: imageOpts.previewUrl } : {}),
+      ...(projectName ? { project_name: projectName } : {}),
+      ...(displayContent ? { display_content: displayContent } : {})
     } as any;
     const nextMessages = [...messagesRef.current, userMsg];
 
@@ -782,7 +822,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   useExternalRequests(userMemoryRef, configRef, onConfigUpdateRef);
 
   const handleVoiceCommand = useCallback((command: string) => {
-    handleSend(command);
+    handleSend(command, undefined, true);
   }, []);
 
   const {
@@ -831,7 +871,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         isSupported={isSupported}
         startListening={startListening}
         stopListening={stopListening}
-        onSend={(opts) => handleSend(undefined, opts)}
+        onSend={(opts, textOverride, projectName, displayContent) => handleSend(textOverride, opts, false, projectName, displayContent)}
       />
     </div>
   );

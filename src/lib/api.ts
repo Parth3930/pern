@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { whatsappApi, WhatsAppContact, RecentChat } from "../integrations/whatsapp/api";
 import { emailApi } from "../integrations/email/api";
 import { discordApi } from "../integrations/discord/api";
@@ -314,6 +314,8 @@ export const api = {
     invoke<void>("add_project", { name, path }),
   removeProject: (name: string) =>
     invoke<void>("remove_project", { name }),
+  read_file: (path: string, projectName: string) => invoke<string>("read_file", { path, projectName }),
+  list_dir: (path: string, projectName: string) => invoke<string>("list_dir", { path, projectName }),
   listProjects: () => invoke<ProjectConfig[]>("list_projects"),
 
   // Windows Autostart

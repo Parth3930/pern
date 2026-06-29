@@ -341,12 +341,12 @@ export function getActionFewShots(categories?: string[]): string {
     return FEW_SHOTS.slice(0, 4).map((e) => e.text).join("\n\n");
   }
   
-  const selected = [];
+  const selected: any[] = [];
   const added = new Set<string>();
 
   // 1. Force at least one example for each requested category
   for (const cat of categories) {
-    const example = FEW_SHOTS.find(e => e.categories.includes(cat) && !added.has(e.text));
+    const example = FEW_SHOTS.find(e => (e.categories as readonly string[]).includes(cat) && !added.has(e.text));
     if (example) {
       selected.push(example);
       added.add(example.text);
@@ -357,7 +357,7 @@ export function getActionFewShots(categories?: string[]): string {
   // but ONLY include category-specific ones (ignore length === 0 filler)
   for (const e of FEW_SHOTS) {
     if (selected.length >= 4) break;
-    if (!added.has(e.text) && e.categories.some(c => categories.includes(c))) {
+    if (!added.has(e.text) && (e.categories as readonly string[]).some(c => categories.includes(c))) {
       selected.push(e);
       added.add(e.text);
     }

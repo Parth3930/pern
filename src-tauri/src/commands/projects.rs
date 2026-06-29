@@ -133,3 +133,63 @@ pub async fn list_projects(
     let config = state.config.lock().await;
     Ok(config.projects.clone())
 }
+
+#[tauri::command]
+pub async fn read_file(
+    path: String,
+    project_name: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let config = state.config.lock().await;
+    let project = config.projects.iter().find(|p| p.name == project_name)
+        .ok_or_else(|| "Project not found".to_string())?;
+    
+    let base = std::path::PathBuf::from(&project.path);
+    let path_str = if path == project_name || path.is_empty() { "." } else { &path };
+    let target = base.join(path_str);
+    
+    if !target.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    
+    // basic security: make sure target is within base
+    if !target.canonicalize().unwrap_or_default().starts_with(base.canonicalize().unwrap_or_default()) {
+        return Err("Path is outside project directory".to_string());
+    }
+    
+    std::fs::read_to_string(&target).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn list_dir(
+    path: String,
+    project_name: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let config = state.config.lock().await;
+    let project = config.projects.iter().find(|p| p.name == project_name)
+        .ok_or_else(|| "Project not found".to_string())?;
+    
+    let base = std::path::PathBuf::from(&project.path);
+    let path_str = if path == project_name || path.is_empty() { "." } else { &path };
+    let target = base.join(path_str);
+    
+    if !target.exists() {
+        return Err(format!("Directory not found: {}", path));
+    }
+    
+    if !target.canonicalize().unwrap_or_default().starts_with(base.canonicalize().unwrap_or_default()) {
+        return Err("Path is outside project directory".to_string());
+    }
+    
+    let mut entries = Vec::new();
+    if let Ok(dir) = std::fs::read_dir(&target) {
+        for entry in dir.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            entries.push(format!("{}{}", name, if is_dir { "/" } else { "" }));
+        }
+    }
+    let result = entries.join("\n");
+    Ok(result)
+}

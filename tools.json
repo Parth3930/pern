@@ -497,6 +497,33 @@
         "disconnect_minecraft",
         "leave_minecraft"
       ]
+    },
+    {
+      "name": "read_file",
+      "category": "files",
+      "args_signature": "path: string",
+      "description": "Reads the contents of a file in the project.",
+      "params": [
+        "path"
+      ],
+      "aliases": [
+        "read",
+        "view_file"
+      ]
+    },
+    {
+      "name": "list_dir",
+      "category": "files",
+      "args_signature": "path: string",
+      "description": "Lists the contents of a directory in the project.",
+      "params": [
+        "path"
+      ],
+      "aliases": [
+        "ls",
+        "dir",
+        "list"
+      ]
     }
   ],
   "discord_tools_with_guild_id": [
@@ -825,6 +852,18 @@
         "banter"
       ],
       "text": "User Request: give me a flirty pickup line\\nPlan:\\n- conversational()"
+    },
+    {
+      "categories": [
+        "files"
+      ],
+      "text": "User Request: fire pern in project Pern to whats in this project?\\nPlan:\\n- list_dir(path=\".\")\\n- read_file(path=\"README.md\")"
+    },
+    {
+      "categories": [
+        "files"
+      ],
+      "text": "User Request: read src/main.rs\\nPlan:\\n- read_file(path=\"src/main.rs\")"
     }
   ]
 }

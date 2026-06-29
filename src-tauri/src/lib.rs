@@ -459,6 +459,8 @@ pub fn run() {
             commands::projects::add_project,
             commands::projects::remove_project,
             commands::projects::list_projects,
+            commands::projects::read_file,
+            commands::projects::list_dir,
             commands::system::set_autostart,
             commands::system::get_autostart,
             commands::todos::get_todos,

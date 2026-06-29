@@ -287,6 +287,20 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Disconnects the Pern bot player from the Minecraft world.",
         params: &[],
         signature: "- disconnect_minecraft_world() -> Disconnects the Pern bot player from the Minecraft world.",
+    },
+    ToolDefinition {
+        name: "read_file",
+        category: "files",
+        description: "Reads the contents of a file in the project.",
+        params: &["path"],
+        signature: "- read_file(path: string) -> Reads the contents of a file in the project.",
+    },
+    ToolDefinition {
+        name: "list_dir",
+        category: "files",
+        description: "Lists the contents of a directory in the project.",
+        params: &["path"],
+        signature: "- list_dir(path: string) -> Lists the contents of a directory in the project.",
     }
 ];
 
@@ -358,7 +372,12 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("connect_minecraft", "join_minecraft_world"),
     ("minecraft_disconnect", "disconnect_minecraft_world"),
     ("disconnect_minecraft", "disconnect_minecraft_world"),
-    ("leave_minecraft", "disconnect_minecraft_world")
+    ("leave_minecraft", "disconnect_minecraft_world"),
+    ("read", "read_file"),
+    ("view_file", "read_file"),
+    ("ls", "list_dir"),
+    ("dir", "list_dir"),
+    ("list", "list_dir")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[
@@ -477,6 +496,14 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     FewShotExample {
         categories: &["banter"],
         text: "User Request: give me a flirty pickup line\\nPlan:\\n- conversational()",
+    },
+    FewShotExample {
+        categories: &["files"],
+        text: "User Request: fire pern in project Pern to whats in this project?\\nPlan:\\n- list_dir(path=\".\")\\n- read_file(path=\"README.md\")",
+    },
+    FewShotExample {
+        categories: &["files"],
+        text: "User Request: read src/main.rs\\nPlan:\\n- read_file(path=\"src/main.rs\")",
     }
 ];
 

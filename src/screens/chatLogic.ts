@@ -157,6 +157,14 @@ export function extractToolCalls(
       if (call.tool === "close_app" || call.tool === "launch_app") {
         const appName =
           typeof call.args.app_name === "string" ? call.args.app_name : "";
+          
+        // ponytail: require explicit action verb if message is a full sentence
+        const hasVerb = /\b(open|launch|start|run|close|quit|exit|kill|restart)\b/i.test(userMessage);
+        if (appName && !hasVerb && userMessage.split(/\s+/).length > 2) {
+          console.warn(`[CHAT] ponytail: filtering unrequested app action`);
+          continue;
+        }
+
         const hasAppReference =
           /\b(both|them|it|all|app|apps|program|application|window|windows|process|browser|editor|terminal|console|client|tool|task|utility|software|ide|player|tab|tabs|page|pages)\b/i.test(
             userMessage,
@@ -274,32 +282,9 @@ function sanitizeMessageForModel(message: ChatMessage): ChatMessage | null {
   }
 
   const content = message.content;
-  const hasToolCalls = content
-    .split("\n")
-    .some((line) => line.trim().startsWith("-"));
-
-  if (hasToolCalls) {
-    // Keep only the tool call/plan lines, strip UI/tool results
-    let lines = content.split("\n");
-    lines = lines.filter((line) => {
-      const trimmed = line.trim();
-      return (
-        trimmed.startsWith("Plan:") ||
-        trimmed.startsWith("-") ||
-        trimmed === "<plan>" ||
-        trimmed === "</plan>"
-      );
-    });
-    const cleanContent = lines.join("\n").trim();
-    return cleanContent ? { ...message, content: cleanContent } : null;
-  } else {
-    // Conversational assistant message: keep as-is, just strip [TOOL_RESULT] prefix if any
-    let clean = content;
-    if (clean.startsWith("[TOOL_RESULT] ")) {
-      clean = clean.slice("[TOOL_RESULT] ".length).trim();
-    }
-    return clean ? { ...message, content: clean } : null;
-  }
+  const lines = content.split("\n").filter(line => !line.trim().startsWith("[TOOL_RESULT]"));
+  const cleanContent = lines.join("\n").trim();
+  return cleanContent ? { ...message, content: cleanContent } : null;
 }
 
 export interface CompactionResult {
@@ -541,6 +526,15 @@ function detectRequiredToolCategories(
     );
   if (isAgents) {
     categories.add("agents");
+  }
+
+  // 5.1 Files Matcher
+  const isFiles =
+    /\b(file|dir|directory|read|list|ls|cat|what is in|whats in|project)\b/i.test(
+      normalized,
+    ) || isAgents; // Also include files tools if agents are mentioned so Pern can read files
+  if (isFiles) {
+    categories.add("files");
   }
 
   // 5.5 Todos Matcher
@@ -815,8 +809,10 @@ export function buildConversationHistory(
       memoryContext += `Recent WhatsApp details: ${lastWhatsAppSection.trim()}. `;
     }
 
-    systemPrompt = buildActionSystemPrompt("", categories);
-    dynamicContext = memoryContext;
+    systemPrompt = buildActionSystemPrompt(memoryContext, categories);
+    const fewShots = getActionFewShots(categories);
+    systemPrompt += `\n\nHere are some examples of how to respond:\n${fewShots}`;
+    dynamicContext = "";
   } else {
     // Chat mode: zero mention of JSON or tools — keeps small models from hallucinating JSON
     const banterRule = categories.includes("banter")
@@ -890,11 +886,7 @@ export function buildConversationHistory(
     const lastMsg = finalMessages[finalMessages.length - 1];
     if (lastMsg.role === "user") {
       if (latestIntent === "action") {
-        const fewShots = getActionFewShots(categories);
-        const contextStr = dynamicContext
-          ? `[Owner context: ${dynamicContext.trim()}]\n\n`
-          : "";
-        lastMsg.content = `${contextStr}${fewShots}\n\nUser Request: ${lastMsg.content}\nPlan:\n`;
+        lastMsg.content = `User Request: ${lastMsg.content}\nPlan:\n`;
       } else {
         const contextParts: string[] = [];
         if (memory.name) {
@@ -1035,6 +1027,10 @@ export function getCurrentTaskLabel(toolCall: ToolCall): string {
       return `Sending task to ${getStringArg(args, "agent_name") || "agent"}...`;
     case "get_cli_agents_status":
       return "Checking CLI agents status...";
+    case "list_dir":
+      return `Listing directory ${getStringArg(args, "path")}...`;
+    case "read_file":
+      return `Reading file ${getStringArg(args, "path")}...`;
     default:
       return "Processing...";
   }
@@ -1239,17 +1235,17 @@ export function detectActionIntent(
   const commandPatterns = [
     /\b[a-zA-Z\s]+-\s*\+?[0-9\s-]{8,}\b/i,
     /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|both|them|it|all|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|file manager|filemanager|files|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
-    /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent)\b/i,
+    /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent|pern)\b/i,
     /\b(add|save|create|configure|setup|set up)\b.{0,30}\b(contact|whatsapp contact|email config|smtp)\b/i,
     /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(auto[- ]?reply|whatsapp|it)\b/i,
     /\b(turn|set|toggle|enable|disable)\b.{0,30}\b(mom|parth|samarth|him|her|them|rahul|chirag|rover)\b/i,
     /\b(set|change|update)\b.{0,30}\b(discord)\b.{0,30}\b(status|activity|presence)\b/i,
-    /\b(is|check|what is|what's)\b.{0,20}(claude|hermes|codex|agy|free.?bu)\w*\b.{0,20}\b(running|status|doing|working|active|available|busy)\b/i,
-    /\b(tell|ask|send|instruct|prompt|fire|run|execute|trigger|invoke|give)\b.{0,30}(claude|hermes|codex|agy|free.?bu)\w*\b.{0,60}\b(to|and|:|in|on|of|for|with)\b/i,
-    /\b(fire|run|execute|trigger|invoke|launch|start|give)\b.{0,20}\b(command|task|prompt|agent|job|hi|hello)\b.{0,30}\b(in|on|to|with|for|at)\b.{0,20}(claude|hermes|codex|agy|free.?bu)\w*\b/i,
+    /\b(is|check|what is|what's)\b.{0,20}(claude|hermes|codex|agy|free.?bu\w*|pern)\b.{0,20}\b(running|status|doing|working|active|available|busy)\b/i,
+    /\b(tell|ask|send|instruct|prompt|fire|run|execute|trigger|invoke|give)\b.{0,30}(claude|hermes|codex|agy|free.?bu\w*|pern)\b.{0,60}\b(to|and|:|in|on|of|for|with)\b/i,
+    /\b(fire|run|execute|trigger|invoke|launch|start|give)\b.{0,20}\b(command|task|prompt|agent|job|hi|hello)\b.{0,30}\b(in|on|to|with|for|at)\b.{0,20}(claude|hermes|codex|agy|free.?bu\w*|pern)\b/i,
     /\b(agent|cli agent)\b.{0,20}\b(status|running|list|state|active|busy)\b/i,
-    /(free.?bu\w*|hermes|claude.?code|codex|agy)\b.{0,30}\b(do|run|execute|perform|check|send|write|create|make|build|fix|update|install|configure|say|tell|message|fetch)\b/i,
-    /\b(give|fire|send|run|execute|trigger|instruct|tell|ask)\b.{0,40}\b(a|the|this)\b.{0,30}(free.?bu\w*|hermes|claude.?code|codex|agy)\b.{0,50}\b(to|and|:)\b.{0,50}\b(task|prompt|command|hi|hello|say|do|run|execute|check|write|make|build|install|update)\b/i,
+    /(free.?bu\w*|hermes|claude.?code|codex|agy|pern)\b.{0,30}\b(do|run|execute|perform|check|send|write|create|make|build|fix|update|install|configure|say|tell|message|fetch|read|list|what)\b/i,
+    /\b(give|fire|send|run|execute|trigger|instruct|tell|ask)\b.{0,40}\b(a|the|this)\b.{0,30}(free.?bu\w*|hermes|claude.?code|codex|agy|pern)\b.{0,50}\b(to|and|:)\b.{0,50}\b(task|prompt|command|hi|hello|say|do|run|execute|check|write|make|build|install|update|read|list|what)\b/i,
     /\b(can you|could you|please|pls|need|need you to|want|want you to|i need|i want|would you|could you please|can you please)\b.{0,50}\b(send|message|text|email|open|launch|close|ask|tell|say)\b/i,
     /\b(ask|tell|message|text)\b.{0,20}\b(him|her|them|parth|samarth|rahul|mom|dad|chirag|rover)\b/i,
     /\b(send|message|text|email)\b.{0,20}\b(the same|same|it|them|him|her)\b/i,
