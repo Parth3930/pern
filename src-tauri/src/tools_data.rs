@@ -24,14 +24,14 @@ pub struct RuleDefinition {
 pub const TOOLS: &[ToolDefinition] = &[
     ToolDefinition {
         name: "launch_app",
-        category: "system",
+        category: "apps",
         description: "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\").",
         params: &["app_name"],
         signature: "- launch_app(app_name: string) -> Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\").",
     },
     ToolDefinition {
         name: "close_app",
-        category: "system",
+        category: "apps",
         description: "Closes an app by name.",
         params: &["app_name"],
         signature: "- close_app(app_name: string) -> Closes an app by name.",
@@ -367,19 +367,19 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
         text: "User Request: what is the capital of France?\\nPlan:\\n- conversational()",
     },
     FewShotExample {
-        categories: &["system"],
+        categories: &["apps"],
         text: "User Request: open chrome and notepad\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- launch_app(app_name=\"notepad\")",
     },
     FewShotExample {
-        categories: &["system"],
+        categories: &["apps"],
         text: "User Request: open both\\nPlan:\\n- conversational()",
     },
     FewShotExample {
-        categories: &["system"],
+        categories: &["apps"],
         text: "User Request: open calculator and close notepad\\nPlan:\\n- launch_app(app_name=\"calculator\")\\n- close_app(app_name=\"notepad\")",
     },
     FewShotExample {
-        categories: &["system"],
+        categories: &["apps"],
         text: "User Request: close chrome and notepad\\nPlan:\\n- close_app(app_name=\"chrome\")\\n- close_app(app_name=\"notepad\")",
     },
     FewShotExample {
@@ -392,7 +392,7 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     },
     FewShotExample {
         categories: &["whatsapp"],
-        text: "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\\nPlan:\\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\\n- launch_app(app_name=\"whatsapp\")\\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)",
+        text: "User Request: ask rahul how he doing on whatsapp\nPlan:\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Hey Rahul, how are you doing?\")",
     },
     FewShotExample {
         categories: &["discord"],
@@ -417,6 +417,10 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     FewShotExample {
         categories: &["system", "discord"],
         text: "User Request: open chrome, check status of cli agents, and set my discord status to idle with activity away\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- get_cli_agents_status()\\n- set_discord_status(status=\"idle\", activity=\"away\")",
+    },
+    FewShotExample {
+        categories: &["whatsapp"],
+        text: "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\\nPlan:\\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\\n- launch_app(app_name=\"whatsapp\")\\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)",
     },
     FewShotExample {
         categories: &["whatsapp"],
@@ -555,6 +559,10 @@ pub const RULES: &[RuleDefinition] = &[
     },
     RuleDefinition {
         text: "15. STRICT NO HALLUCINATION: Do NOT generate unrequested actions. End the plan immediately after the user's requested actions. NEVER make up tools like ask_what_is_rajans_status().",
+        categories: &[],
+    },
+    RuleDefinition {
+        text: "16. SEQUENTIAL AGENTIC LOOP: When given multiple tasks, DO NOT output a massive plan with everything. Output a <plan> with only the FIRST immediate step. Once that tool is executed, the agent loop will automatically invoke you again to continue the plan. One task per response.",
         categories: &[],
     }
 ];

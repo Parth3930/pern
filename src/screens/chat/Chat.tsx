@@ -61,6 +61,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   const lastToolResultRef = useRef<{ tool: string; status: string } | null>(
     null,
   );
+  const loopCountRef = useRef(0);
   const NON_NAME_SELF_DESCRIPTORS = new Set([
     "bored",
     "busy",
@@ -213,7 +214,6 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
               "[CHAT][DIAG] Action intent + tools found → executing tool batch",
             );
             pendingToolExecutionRef.current = toolCalls;
-            lastExecutedToolCallRef.current = null;
             await handleToolBatch(toolCalls);
             pendingToolExecutionRef.current = null;
           } else {
@@ -433,7 +433,6 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       messagesRef.current = nextMessages;
       return nextMessages;
     });
-    setIsGenerating(false);
 
     if (context.needsConfigRefreshRef.current && onConfigUpdate) {
       try {
@@ -442,6 +441,27 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         // Ignore refresh failures
       }
     }
+
+    if (toolCalls.length > 0 && loopCountRef.current < 5) {
+      loopCountRef.current++;
+      try {
+        awaitingModelResponseRef.current = true;
+        await api.sendChatMessage(
+          configRef.current.selected_model,
+          messagesRef.current.map(m => ({ 
+            role: m.role, 
+            content: m.content, 
+            memory_tool_results: m.memory_tool_results 
+          }))
+        );
+        return;
+      } catch (e) {
+        console.error("[CHAT] Agentic loop failed:", e);
+      }
+    }
+
+    loopCountRef.current = 0;
+    setIsGenerating(false);
   };
 
   const handleSend = async (overrideInput?: string, imageOpts?: any) => {
@@ -604,6 +624,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     lastExecutedToolCallRef.current = null;
     emptyResponseRetryCountRef.current = 0;
     lastToolResultRef.current = null;
+    loopCountRef.current = 0;
 
     const userMsg: ChatMessage = { 
       role: "user", 

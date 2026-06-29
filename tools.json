@@ -5,47 +5,84 @@
       "category": "apps",
       "args_signature": "app_name: string",
       "description": "Opens an app by name (\"calculator\", \"notepad\", \"chrome\", \"discord\", \"whatsapp\").",
-      "params": ["app_name"],
-      "aliases": ["open_app", "open_application", "run_app", "start_app", "discord_launch_app"]
+      "params": [
+        "app_name"
+      ],
+      "aliases": [
+        "open_app",
+        "open_application",
+        "run_app",
+        "start_app",
+        "discord_launch_app"
+      ]
     },
     {
       "name": "close_app",
       "category": "apps",
       "args_signature": "app_name: string",
       "description": "Closes an app by name.",
-      "params": ["app_name"],
-      "aliases": ["close_application", "stop_app", "exit_app", "kill_app", "discord_close_app"]
+      "params": [
+        "app_name"
+      ],
+      "aliases": [
+        "close_application",
+        "stop_app",
+        "exit_app",
+        "kill_app",
+        "discord_close_app"
+      ]
     },
     {
       "name": "send_whatsapp_message",
       "category": "whatsapp",
       "args_signature": "recipient: string, message: string",
       "description": "Sends WhatsApp message.",
-      "params": ["recipient", "message"],
-      "aliases": ["whatsapp_message", "send_whatsapp", "discord_send_whatsapp_message"]
+      "params": [
+        "recipient",
+        "message"
+      ],
+      "aliases": [
+        "whatsapp_message",
+        "send_whatsapp",
+        "discord_send_whatsapp_message"
+      ]
     },
     {
       "name": "set_whatsapp_auto_reply",
       "category": "whatsapp",
       "args_signature": "recipient: string, enabled: boolean",
       "description": "Enables (true) or disables (false) WhatsApp auto reply for recipient.",
-      "params": ["recipient", "enabled"],
-      "aliases": ["whatsapp_auto_reply", "whatsapp_auto", "discord_set_whatsapp_auto_reply"]
+      "params": [
+        "recipient",
+        "enabled"
+      ],
+      "aliases": [
+        "whatsapp_auto_reply",
+        "whatsapp_auto",
+        "discord_set_whatsapp_auto_reply"
+      ]
     },
     {
       "name": "toggle_whatsapp_auto_reply",
       "category": "whatsapp",
       "args_signature": "recipient: string",
       "description": "Toggles WhatsApp auto reply for recipient.",
-      "params": ["recipient"],
-      "aliases": ["send_whatsapp_auto_reply", "discord_toggle_whatsapp_auto_reply"]
+      "params": [
+        "recipient"
+      ],
+      "aliases": [
+        "send_whatsapp_auto_reply",
+        "discord_toggle_whatsapp_auto_reply"
+      ]
     },
     {
       "name": "toggle_whatsapp",
       "category": "whatsapp",
       "args_signature": "enabled: boolean",
       "description": "Toggles global WhatsApp auto-reply on/off.",
-      "params": ["enabled"],
+      "params": [
+        "enabled"
+      ],
       "aliases": []
     },
     {
@@ -53,8 +90,14 @@
       "category": "discord",
       "args_signature": "status: string, activity: string",
       "description": "Sets bot status and activity.",
-      "params": ["status", "activity"],
-      "aliases": ["discord_set_status", "discord_set_discord_status"]
+      "params": [
+        "status",
+        "activity"
+      ],
+      "aliases": [
+        "discord_set_status",
+        "discord_set_discord_status"
+      ]
     },
     {
       "name": "discord_get_channels",
@@ -62,30 +105,50 @@
       "args_signature": "",
       "description": "Lists channels in a server.",
       "params": [],
-      "aliases": ["get_channels"]
+      "aliases": [
+        "get_channels"
+      ]
     },
     {
       "name": "discord_send_channel_message",
       "category": "discord",
       "args_signature": "channel_name: string, message: string",
       "description": "Sends message to a server channel.",
-      "params": ["channel_name", "message"],
-      "aliases": ["send_channel_message"]
+      "params": [
+        "channel_name",
+        "message"
+      ],
+      "aliases": [
+        "send_channel_message"
+      ]
     },
     {
       "name": "send_email",
       "category": "email",
       "args_signature": "to: string, subject: string, body: string",
       "description": "Sends email.",
-      "params": ["to", "subject", "body"],
-      "aliases": ["email", "send_mail", "discord_send_email"]
+      "params": [
+        "to",
+        "subject",
+        "body"
+      ],
+      "aliases": [
+        "email",
+        "send_mail",
+        "discord_send_email"
+      ]
     },
     {
       "name": "save_email_config",
       "category": "email",
       "args_signature": "smtp_host: string, smtp_port: number, sender_email: string, smtp_password: string",
       "description": "Saves SMTP config.",
-      "params": ["smtp_host", "smtp_port", "sender_email", "smtp_password"],
+      "params": [
+        "smtp_host",
+        "smtp_port",
+        "sender_email",
+        "smtp_password"
+      ],
       "aliases": []
     },
     {
@@ -93,7 +156,10 @@
       "category": "whatsapp",
       "args_signature": "name: string, number: string",
       "description": "Adds a contact to the allowed auto-reply list.",
-      "params": ["name", "number"],
+      "params": [
+        "name",
+        "number"
+      ],
       "aliases": []
     },
     {
@@ -101,80 +167,130 @@
       "category": "discord",
       "args_signature": "user_id: string, reason: string",
       "description": "Kicks user from server.",
-      "params": ["user_id", "reason"],
-      "aliases": ["kick"]
+      "params": [
+        "user_id",
+        "reason"
+      ],
+      "aliases": [
+        "kick"
+      ]
     },
     {
       "name": "discord_ban",
       "category": "discord",
       "args_signature": "user_id: string, reason: string, delete_message_seconds: number",
       "description": "Bans user from server.",
-      "params": ["user_id", "reason", "delete_message_seconds"],
-      "aliases": ["ban"]
+      "params": [
+        "user_id",
+        "reason",
+        "delete_message_seconds"
+      ],
+      "aliases": [
+        "ban"
+      ]
     },
     {
       "name": "discord_unban",
       "category": "discord",
       "args_signature": "user_id: string",
       "description": "Unbans user.",
-      "params": ["user_id"],
-      "aliases": ["unban"]
+      "params": [
+        "user_id"
+      ],
+      "aliases": [
+        "unban"
+      ]
     },
     {
       "name": "discord_mute",
       "category": "discord",
       "args_signature": "user_id: string, duration_mins: number, reason: string",
       "description": "Mutes user.",
-      "params": ["user_id", "duration_mins", "reason"],
-      "aliases": ["mute"]
+      "params": [
+        "user_id",
+        "duration_mins",
+        "reason"
+      ],
+      "aliases": [
+        "mute"
+      ]
     },
     {
       "name": "discord_unmute",
       "category": "discord",
       "args_signature": "user_id: string",
       "description": "Unmutes user.",
-      "params": ["user_id"],
-      "aliases": ["unmute"]
+      "params": [
+        "user_id"
+      ],
+      "aliases": [
+        "unmute"
+      ]
     },
     {
       "name": "discord_warn",
       "category": "discord",
       "args_signature": "user_id: string, reason: string",
       "description": "Warns user via DM.",
-      "params": ["user_id", "reason"],
-      "aliases": ["warn"]
+      "params": [
+        "user_id",
+        "reason"
+      ],
+      "aliases": [
+        "warn"
+      ]
     },
     {
       "name": "discord_delete_messages",
       "category": "discord",
       "args_signature": "channel_id: string, count: number",
       "description": "Purges last count messages.",
-      "params": ["channel_id", "count"],
-      "aliases": ["delete_messages"]
+      "params": [
+        "channel_id",
+        "count"
+      ],
+      "aliases": [
+        "delete_messages"
+      ]
     },
     {
       "name": "discord_assign_role",
       "category": "discord",
       "args_signature": "user_id: string, role_id: string",
       "description": "Assigns role to user.",
-      "params": ["user_id", "role_id"],
-      "aliases": ["assign_role"]
+      "params": [
+        "user_id",
+        "role_id"
+      ],
+      "aliases": [
+        "assign_role"
+      ]
     },
     {
       "name": "discord_remove_role",
       "category": "discord",
       "args_signature": "user_id: string, role_id: string",
       "description": "Removes role from user.",
-      "params": ["user_id", "role_id"],
-      "aliases": ["remove_role"]
+      "params": [
+        "user_id",
+        "role_id"
+      ],
+      "aliases": [
+        "remove_role"
+      ]
     },
     {
       "name": "discord_send_dm",
       "category": "discord",
       "args_signature": "user_id: string, message: string",
       "description": "Sends Discord DM to user.",
-      "params": ["user_id", "message"],
-      "aliases": ["send_dm"]
+      "params": [
+        "user_id",
+        "message"
+      ],
+      "aliases": [
+        "send_dm"
+      ]
     },
     {
       "name": "discord_get_guilds",
@@ -182,7 +298,9 @@
       "args_signature": "",
       "description": "Lists Discord servers.",
       "params": [],
-      "aliases": ["get_guilds"]
+      "aliases": [
+        "get_guilds"
+      ]
     },
     {
       "name": "get_status",
@@ -190,31 +308,47 @@
       "args_signature": "",
       "description": "Gets system uptime and health.",
       "params": [],
-      "aliases": ["discord_get_status"]
+      "aliases": [
+        "discord_get_status"
+      ]
     },
     {
       "name": "set_discord_behaviour_channel",
       "category": "discord",
       "args_signature": "channel_id: string",
       "description": "Sets behaviour log channel.",
-      "params": ["channel_id"],
-      "aliases": ["discord_set_discord_behaviour_channel"]
+      "params": [
+        "channel_id"
+      ],
+      "aliases": [
+        "discord_set_discord_behaviour_channel"
+      ]
     },
     {
       "name": "get_user_behaviour",
       "category": "discord",
       "args_signature": "user_id: string",
       "description": "Gets user behaviour log.",
-      "params": ["user_id"],
-      "aliases": ["discord_get_user_behaviour"]
+      "params": [
+        "user_id"
+      ],
+      "aliases": [
+        "discord_get_user_behaviour"
+      ]
     },
     {
       "name": "send_to_cli_agent",
       "category": "agents",
       "args_signature": "agent_name: string, prompt: string, project_name: string",
       "description": "Runs CLI agent (agy, claude-code, codex, hermes, freebuff).",
-      "params": ["agent_name", "prompt", "project_name"],
-      "aliases": ["discord_send_to_cli_agent"]
+      "params": [
+        "agent_name",
+        "prompt",
+        "project_name"
+      ],
+      "aliases": [
+        "discord_send_to_cli_agent"
+      ]
     },
     {
       "name": "get_cli_agents_status",
@@ -222,7 +356,9 @@
       "args_signature": "",
       "description": "Gets CLI agents status.",
       "params": [],
-      "aliases": ["discord_get_cli_agents_status"]
+      "aliases": [
+        "discord_get_cli_agents_status"
+      ]
     },
     {
       "name": "restart_system",
@@ -230,7 +366,10 @@
       "args_signature": "",
       "description": "Restarts the system (computer).",
       "params": [],
-      "aliases": ["restart", "reboot"]
+      "aliases": [
+        "restart",
+        "reboot"
+      ]
     },
     {
       "name": "shutdown_system",
@@ -238,14 +377,21 @@
       "args_signature": "",
       "description": "Shuts down the system (computer).",
       "params": [],
-      "aliases": ["shutdown", "poweroff"]
+      "aliases": [
+        "shutdown",
+        "poweroff"
+      ]
     },
     {
       "name": "add_todo",
       "category": "todos",
       "args_signature": "text: string, time?: string, repeat_hours?: number",
       "description": "Adds a new todo task/reminder. time is optional local ISO string without 'Z' (e.g., '2026-06-05T12:00:00'). repeat_hours is optional.",
-      "params": ["text", "time", "repeat_hours"],
+      "params": [
+        "text",
+        "time",
+        "repeat_hours"
+      ],
       "aliases": []
     },
     {
@@ -253,48 +399,92 @@
       "category": "memory",
       "args_signature": "category: string, key: string, value: string, aliases?: string[]",
       "description": "Stores a fact in long-term memory. category is one of: person, project, preference, recurring_task, other. key is the canonical lookup name (e.g. 'robert'). value is the fact itself. aliases is an optional list of alternate names that should also resolve to this fact (e.g. ['Bob','Bobby'] for robert).",
-      "params": ["category", "key", "value", "aliases"],
-      "aliases": ["remember", "memorize", "save_fact", "store_fact"]
+      "params": [
+        "category",
+        "key",
+        "value",
+        "aliases"
+      ],
+      "aliases": [
+        "remember",
+        "memorize",
+        "save_fact",
+        "store_fact"
+      ]
     },
     {
       "name": "recall_fact",
       "category": "memory",
       "args_signature": "query: string, k?: number",
       "description": "Searches long-term memory for facts matching the query. Returns up to k (default 10) hits sorted by relevance, each shown as 'key: value (category)'.",
-      "params": ["query", "k"],
-      "aliases": ["remember_query", "search_memory", "find_fact"]
+      "params": [
+        "query",
+        "k"
+      ],
+      "aliases": [
+        "remember_query",
+        "search_memory",
+        "find_fact"
+      ]
     },
     {
       "name": "forget_fact",
       "category": "memory",
       "args_signature": "key: string",
       "description": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
-      "params": ["key"],
-      "aliases": ["forget", "delete_fact", "remove_fact"]
+      "params": [
+        "key"
+      ],
+      "aliases": [
+        "forget",
+        "delete_fact",
+        "remove_fact"
+      ]
     },
     {
       "name": "list_automations",
       "category": "automation",
       "args_signature": "query?: string, k?: number",
       "description": "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
-      "params": ["query", "k"],
-      "aliases": ["list_automation", "show_automations", "get_automations"]
+      "params": [
+        "query",
+        "k"
+      ],
+      "aliases": [
+        "list_automation",
+        "show_automations",
+        "get_automations"
+      ]
     },
     {
       "name": "run_automation",
       "category": "automation",
       "args_signature": "name: string",
       "description": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
-      "params": ["name"],
-      "aliases": ["trigger_automation", "execute_automation", "fire_automation"]
+      "params": [
+        "name"
+      ],
+      "aliases": [
+        "trigger_automation",
+        "execute_automation",
+        "fire_automation"
+      ]
     },
     {
       "name": "join_minecraft_world",
       "category": "minecraft",
       "args_signature": "port?: number, version?: string",
       "description": "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
-      "params": ["port", "version"],
-      "aliases": ["minecraft_join", "join_minecraft", "join_world", "connect_minecraft"]
+      "params": [
+        "port",
+        "version"
+      ],
+      "aliases": [
+        "minecraft_join",
+        "join_minecraft",
+        "join_world",
+        "connect_minecraft"
+      ]
     },
     {
       "name": "disconnect_minecraft_world",
@@ -302,7 +492,11 @@
       "args_signature": "",
       "description": "Disconnects the Pern bot player from the Minecraft world.",
       "params": [],
-      "aliases": ["minecraft_disconnect", "disconnect_minecraft", "leave_minecraft"]
+      "aliases": [
+        "minecraft_disconnect",
+        "disconnect_minecraft",
+        "leave_minecraft"
+      ]
     }
   ],
   "discord_tools_with_guild_id": [
@@ -336,47 +530,75 @@
     },
     {
       "text": "3. Do not output guild_id; it's auto-injected.",
-      "categories": ["discord"]
+      "categories": [
+        "discord"
+      ]
     },
     {
       "text": "4. MESSAGE FORMATTING:",
-      "categories": ["whatsapp", "discord", "email"]
+      "categories": [
+        "whatsapp",
+        "discord",
+        "email"
+      ]
     },
     {
       "text": "   a. \"saying [text]\" or \"say [text]\" -> use that exact text as message. This overrides any prefix rule.",
-      "categories": ["whatsapp", "discord"]
+      "categories": [
+        "whatsapp",
+        "discord"
+      ]
     },
     {
       "text": "   b. Convert indirect requests (\"ask if he is available\") to direct speech: \"Hey [name], are you available?\"",
-      "categories": ["whatsapp", "discord"]
+      "categories": [
+        "whatsapp",
+        "discord"
+      ]
     },
     {
       "text": "   c. \"message Bob to open discord\" = send_whatsapp_message(\"Bob\", \"open discord\"), NOT launch_app. Do not execute actions inside a message.",
-      "categories": ["whatsapp"]
+      "categories": [
+        "whatsapp"
+      ]
     },
     {
       "text": "   d. \"dm <@123> asking...\" -> discord_send_dm(user_id, \"Hey, can you...\"). Prefix DMs for mentions with \"Hey, \".",
-      "categories": ["discord"]
+      "categories": [
+        "discord"
+      ]
     },
     {
       "text": "   e. For named contacts, ALWAYS prefix messages with \"Hey [name], \" unless rule 4a applies. For <@mentions>, use \"Hey, \" instead.",
-      "categories": ["whatsapp", "discord"]
+      "categories": [
+        "whatsapp",
+        "discord"
+      ]
     },
     {
       "text": "   g. Preserve the exact spelling and casing of all names as written in the request.",
-      "categories": ["whatsapp", "discord"]
+      "categories": [
+        "whatsapp",
+        "discord"
+      ]
     },
     {
       "text": "   f. Preserve the exact spelling and casing of all names and recipients as written in the request.",
-      "categories": ["email"]
+      "categories": [
+        "email"
+      ]
     },
     {
       "text": "5. AUTO-REPLY: \"turn auto reply on/off\" = set_whatsapp_auto_reply(recipient, enabled). Only use toggle_whatsapp_auto_reply when \"toggle\" is explicitly used.",
-      "categories": ["whatsapp"]
+      "categories": [
+        "whatsapp"
+      ]
     },
     {
       "text": "6. BAN VS DELETE: discord_ban's delete_message_seconds is ONLY for deleting the banned user's history. Channel message purging MUST use discord_delete_messages.",
-      "categories": ["discord"]
+      "categories": [
+        "discord"
+      ]
     },
     {
       "text": "7. NO CODE: NEVER output code blocks, if/else, loops, variables, or comments. Output ONLY a flat list of tool calls starting with \"- \".",
@@ -388,11 +610,16 @@
     },
     {
       "text": "9. REASON PROPAGATION: If a reason is given for the first action in a chain (e.g. \"warn for spamming, then mute\"), propagate it to subsequent relevant actions.",
-      "categories": ["discord"]
+      "categories": [
+        "discord"
+      ]
     },
     {
       "text": "10. DISCORD VS WHATSAPP: Channel/role/ban/mute/unban/<@mentions> map to Discord tools. Do NOT use send_whatsapp_message for Discord.",
-      "categories": ["whatsapp", "discord"]
+      "categories": [
+        "whatsapp",
+        "discord"
+      ]
     },
     {
       "text": "11. For 3+ actions, output a \"Todo:\" section before \"Plan:\". For simple requests, omit Todo.",
@@ -404,7 +631,9 @@
     },
     {
       "text": "13. BANTER & FUN: When responding to a conversational request for a joke, pickup line, or friendly/flirtatious banter, be highly cooperative, warm, and humorous. Provide a fun and lighthearted response instead of declining or being overly formal.",
-      "categories": ["banter"]
+      "categories": [
+        "banter"
+      ]
     },
     {
       "text": "14. AMBIGUOUS OR MISSING CONTEXT: If a request is ambiguous or missing required parameters (e.g., \"message Bob\" without a message body, or \"send the same message\" when there is no previous message in context, or \"open both\" when no apps have been launched), DO NOT guess, assume, or hallucinate parameters from the few-shot examples. Instead, map it to: Plan:\\n- conversational() so that the assistant can ask the user for clarification.",
@@ -412,6 +641,10 @@
     },
     {
       "text": "15. STRICT NO HALLUCINATION: Do NOT generate unrequested actions. End the plan immediately after the user's requested actions. NEVER make up tools like ask_what_is_rajans_status().",
+      "categories": []
+    },
+    {
+      "text": "16. SEQUENTIAL AGENTIC LOOP: When given multiple tasks, DO NOT output a massive plan with everything. Output a <plan> with only the FIRST immediate step. Once that tool is executed, the agent loop will automatically invoke you again to continue the plan. One task per response.",
       "categories": []
     }
   ],
@@ -421,99 +654,152 @@
       "text": "User Request: what is the capital of France?\\nPlan:\\n- conversational()"
     },
     {
-      "categories": ["apps"],
+      "categories": [
+        "apps"
+      ],
       "text": "User Request: open chrome and notepad\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- launch_app(app_name=\"notepad\")"
     },
     {
-      "categories": ["apps"],
+      "categories": [
+        "apps"
+      ],
       "text": "User Request: open both\\nPlan:\\n- conversational()"
     },
     {
-      "categories": ["apps"],
+      "categories": [
+        "apps"
+      ],
       "text": "User Request: open calculator and close notepad\\nPlan:\\n- launch_app(app_name=\"calculator\")\\n- close_app(app_name=\"notepad\")"
     },
     {
-      "categories": ["apps"],
+      "categories": [
+        "apps"
+      ],
       "text": "User Request: close chrome and notepad\\nPlan:\\n- close_app(app_name=\"chrome\")\\n- close_app(app_name=\"notepad\")"
     },
     {
-      "categories": ["system"],
+      "categories": [
+        "system"
+      ],
       "text": "User Request: shut down my computer\\nPlan:\\n- shutdown_system()"
     },
     {
-      "categories": ["system"],
+      "categories": [
+        "system"
+      ],
       "text": "User Request: restart the system\\nPlan:\\n- restart_system()"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: ask rahul how he doing on whatsapp\nPlan:\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Hey Rahul, how are you doing?\")"
     },
     {
-      "categories": ["discord"],
+      "categories": [
+        "discord"
+      ],
       "text": "User Request: warn <@456> for toxicity, then mute them for 10 minutes, then assign role 888 to them, then log this in channel logs saying warned and muted user 456\\nPlan:\\n- discord_warn(user_id=\"456\", reason=\"toxicity\")\\n- discord_mute(user_id=\"456\", duration_mins=10, reason=\"toxicity\")\\n- discord_assign_role(user_id=\"456\", role_id=\"888\")\\n- discord_send_channel_message(channel_name=\"logs\", message=\"warned and muted user 456\")"
     },
     {
-      "categories": ["discord"],
+      "categories": [
+        "discord"
+      ],
       "text": "User Request: dm <@123> asking if they can review the change\\nPlan:\\n- discord_send_dm(user_id=\"123\", message=\"Hey, can you review the change?\")"
     },
     {
-      "categories": ["discord"],
+      "categories": [
+        "discord"
+      ],
       "text": "User Request: send a message to general channel saying hello everyone\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"hello everyone\")"
     },
     {
-      "categories": ["email", "discord"],
+      "categories": [
+        "email",
+        "discord"
+      ],
       "text": "User Request: save email config with host smtp.gmail.com port 587 sender me@gmail.com and password pass123, then send email to alice@gmail.com with subject Report and say hello, then dm <@456> asking if they can check it\\nPlan:\\n- save_email_config(smtp_host=\"smtp.gmail.com\", smtp_port=587, sender_email=\"me@gmail.com\", smtp_password=\"pass123\")\\n- send_email(to=\"alice@gmail.com\", subject=\"Report\", body=\"hello\")\\n- discord_send_dm(user_id=\"456\", message=\"Hey, can you check it?\")"
     },
     {
-      "categories": ["agents", "whatsapp"],
+      "categories": [
+        "agents",
+        "whatsapp"
+      ],
       "text": "User Request: run agy on project Pern to build it, then run freebuff to run tests, and if both are done message Bob saying all good, and toggle auto reply for him\\nPlan:\\n- send_to_cli_agent(agent_name=\"agy\", prompt=\"build it\", project_name=\"Pern\")\\n- send_to_cli_agent(agent_name=\"freebuff\", prompt=\"run tests\", project_name=\"Pern\")\\n- send_whatsapp_message(recipient=\"Bob\", message=\"all good\")\\n- toggle_whatsapp_auto_reply(recipient=\"Bob\")"
     },
     {
-      "categories": ["system", "discord"],
+      "categories": [
+        "system",
+        "discord"
+      ],
       "text": "User Request: open chrome, check status of cli agents, and set my discord status to idle with activity away\\nPlan:\\n- launch_app(app_name=\"chrome\")\\n- get_cli_agents_status()\\n- set_discord_status(status=\"idle\", activity=\"away\")"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: message Dave and ask if he is free, and send same message to Frank, and open whatsapp, and turn auto reply on for both of them\\nPlan:\\n- send_whatsapp_message(recipient=\"Dave\", message=\"Hey Dave, are you free?\")\\n- send_whatsapp_message(recipient=\"Frank\", message=\"Hey Frank, are you free?\")\\n- launch_app(app_name=\"whatsapp\")\\n- set_whatsapp_auto_reply(recipient=\"Dave\", enabled=true)\\n- set_whatsapp_auto_reply(recipient=\"Frank\", enabled=true)"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: add contact Alice with number +9876543, then message Alice saying hello, then do that message again, then message Dave on WhatsApp saying hi Alice joined, then do the Dave message twice more\\nPlan:\\n- add_whatsapp_contact(name=\"Alice\", number=\"+9876543\")\\n- send_whatsapp_message(recipient=\"Alice\", message=\"hello\")\\n- send_whatsapp_message(recipient=\"Alice\", message=\"hello\")\\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")\\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")\\n- send_whatsapp_message(recipient=\"Dave\", message=\"hi Alice joined\")"
     },
     {
-      "categories": ["discord"],
+      "categories": [
+        "discord"
+      ],
       "text": "User Request: ban <@789> for raiding, delete 30 messages in channel 888888, then set behaviour log channel to 888888, then get behaviour logs for <@789> to verify\\nPlan:\\n- discord_ban(user_id=\"789\", reason=\"raiding\", delete_message_seconds=0)\\n- discord_delete_messages(channel_id=\"888888\", count=30)\\n- set_discord_behaviour_channel(channel_id=\"888888\")\\n- get_user_behaviour(user_id=\"789\")"
     },
     {
-      "categories": ["whatsapp", "email"],
+      "categories": [
+        "whatsapp",
+        "email"
+      ],
       "text": "User Request: send a whatsapp message to Alice asking if she can check the report, then email her at alice@gmail.com with subject Report Review and body please check the report, then do that email again, then tell her on whatsapp that it is sent\\nPlan:\\n- send_whatsapp_message(recipient=\"Alice\", message=\"Hey Alice, can you check the report?\")\\n- send_email(to=\"alice@gmail.com\", subject=\"Report Review\", body=\"please check the report\")\\n- send_email(to=\"alice@gmail.com\", subject=\"Report Review\", body=\"please check the report\")\\n- send_whatsapp_message(recipient=\"Alice\", message=\"it is sent\")"
     },
     {
-      "categories": ["whatsapp", "discord"],
+      "categories": [
+        "whatsapp",
+        "discord"
+      ],
       "text": "User Request: turn global whatsapp auto reply off, then unban <@111> on discord\\nPlan:\\n- toggle_whatsapp(enabled=false)\\n- discord_unban(user_id=\"111\")"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: message Charlie on WhatsApp asking how he is, and toggle auto reply for him\\nPlan:\\n- send_whatsapp_message(recipient=\"Charlie\", message=\"Hey Charlie, how are you?\")\\n- toggle_whatsapp_auto_reply(recipient=\"Charlie\")"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: message Alice\\nPlan:\\n- conversational()"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "User Request: send the same message to Parth\\nPlan:\\n- conversational()"
     },
     {
-      "categories": ["whatsapp"],
+      "categories": [
+        "whatsapp"
+      ],
       "text": "[Owner context: Recent WhatsApp details: ### LAST WHATSAPP\\nRecipient(s): Rahul\\nMessage: this is a test]\\n\\nUser Request: send the same message to Parth\\nPlan:\\n- send_whatsapp_message(recipient=\"Parth\", message=\"this is a test\")"
     },
     {
-      "categories": ["banter"],
+      "categories": [
+        "banter"
+      ],
       "text": "User Request: tell me a joke\\nPlan:\\n- conversational()"
     },
     {
-      "categories": ["banter"],
+      "categories": [
+        "banter"
+      ],
       "text": "User Request: give me a flirty pickup line\\nPlan:\\n- conversational()"
     }
   ]

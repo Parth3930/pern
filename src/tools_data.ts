@@ -557,6 +557,10 @@ export const RULES = [
   {
     text: "15. STRICT NO HALLUCINATION: Do NOT generate unrequested actions. End the plan immediately after the user's requested actions. NEVER make up tools like ask_what_is_rajans_status().",
     categories: []
+  },
+  {
+    text: "16. SEQUENTIAL AGENTIC LOOP: When given multiple tasks, DO NOT output a massive plan with everything. Output a <plan> with only the FIRST immediate step. Once that tool is executed, the agent loop will automatically invoke you again to continue the plan. One task per response.",
+    categories: []
   }
 ] as const;
 
