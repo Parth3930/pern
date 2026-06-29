@@ -3,12 +3,15 @@ import logo from "../../assets/logo.png";
 import { CheckCircle2, Database, Trash2, Download } from "lucide-react";
 import { ChatMessage, MemoryToolResult } from "../../lib/api";
 import { stripToolCalls } from "../chatLogic";
+import { PlannerView } from "./PlannerView";
+import { TaskPlan } from "./taskPlanner";
 
 interface MessageListProps {
   messages: ChatMessage[];
   isGenerating: boolean;
   currentTask: string | null;
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  activePlan?: TaskPlan | null;
 }
 
 const cleanUserMessageForDisplay = (content: string) => {
@@ -113,6 +116,7 @@ export const MessageList: React.FC<MessageListProps> = ({
   isGenerating,
   currentTask,
   scrollRef,
+  activePlan,
 }) => {
   const renderMessageContent = (
     content: string,
@@ -196,6 +200,14 @@ export const MessageList: React.FC<MessageListProps> = ({
           if (msg.role === "system" && msg.content.startsWith("Tool Result:"))
             return null;
 
+          if (msg.harness_plan) {
+            return (
+              <div key={i} style={{ padding: "0 4px", margin: "4px 0" }}>
+                <PlannerView plan={msg.harness_plan} />
+              </div>
+            );
+          }
+
           const isLastAssistantMsg = i === actualLastAssistantIdx;
           const assistantContent =
             msg.role === "assistant"
@@ -259,6 +271,13 @@ export const MessageList: React.FC<MessageListProps> = ({
               {currentTask}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Harness plan view — shown when a multi-step plan is active */}
+      {activePlan && (
+        <div style={{ padding: "0 4px" }}>
+          <PlannerView plan={activePlan} />
         </div>
       )}
     </div>

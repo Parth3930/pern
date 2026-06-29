@@ -408,6 +408,22 @@ export const FEW_SHOTS = [
     text: "User Request: save email config with host smtp.gmail.com port 587 sender me@gmail.com and password pass123, then send email to alice@gmail.com with subject Report and say hello, then dm <@456> asking if they can check it\\nPlan:\\n- save_email_config(smtp_host=\"smtp.gmail.com\", smtp_port=587, sender_email=\"me@gmail.com\", smtp_password=\"pass123\")\\n- send_email(to=\"alice@gmail.com\", subject=\"Report\", body=\"hello\")\\n- discord_send_dm(user_id=\"456\", message=\"Hey, can you check it?\")"
   },
   {
+    categories: ["whatsapp"],
+    text: "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"{generated_content}\")"
+  },
+  {
+    categories: ["discord"],
+    text: "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"{generated_content}\")"
+  },
+  {
+    categories: ["email"],
+    text: "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"{generated_content}\")"
+  },
+  {
+    categories: ["whatsapp"],
+    text: "User Request: ask rahul how he doing on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Hey Rahul, how are you doing?\")"
+  },
+  {
     categories: ["agents", "whatsapp"],
     text: "User Request: run agy on project Pern to build it, then run freebuff to run tests, and if both are done message Bob saying all good, and toggle auto reply for him\\nPlan:\\n- send_to_cli_agent(agent_name=\"agy\", prompt=\"build it\", project_name=\"Pern\")\\n- send_to_cli_agent(agent_name=\"freebuff\", prompt=\"run tests\", project_name=\"Pern\")\\n- send_whatsapp_message(recipient=\"Bob\", message=\"all good\")\\n- toggle_whatsapp_auto_reply(recipient=\"Bob\")"
   },

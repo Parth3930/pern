@@ -8,6 +8,8 @@ import { useChatServer } from "./hooks/useChatServer";
 import { useCLIAgentEvents } from "./hooks/useCLIAgentEvents";
 import { useExternalRequests } from "./hooks/useExternalRequests";
 import { useTodoReminders } from "./hooks/useTodoReminders";
+import { useHarness } from "./hooks/useHarness";
+import { decomposeTask, mightBeMultiStep, TaskPlan } from "./taskPlanner";
 
 interface Props {
   config: AppConfig;
@@ -41,6 +43,9 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
   const [input, setInput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentTask, setCurrentTask] = useState<string | null>(null);
+  // Harness state for multi-step task plans
+  const [activePlan, setActivePlan] = useState<TaskPlan | null>(null);
+  const [planExecuting, setPlanExecuting] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const setupRef = useRef(false);
@@ -62,6 +67,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     null,
   );
   const loopCountRef = useRef(0);
+  const { executePlan } = useHarness(config);
   const NON_NAME_SELF_DESCRIPTORS = new Set([
     "bored",
     "busy",
@@ -442,18 +448,24 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       }
     }
 
-    if (toolCalls.length > 0 && loopCountRef.current < 5) {
+    // ponytail: agentic loop uses a MINIMAL re-prompt, not full history.
+    // Full history causes context explosion with small LLMs.
+    if (toolCalls.length > 0 && loopCountRef.current < 3) {
       loopCountRef.current++;
       try {
         awaitingModelResponseRef.current = true;
-        await api.sendChatMessage(
-          configRef.current.selected_model,
-          messagesRef.current.map(m => ({ 
-            role: m.role, 
-            content: m.content, 
-            memory_tool_results: m.memory_tool_results 
-          }))
-        );
+        // Switch intent to "chat" so the model's text summary isn't retried as an action
+        latestIntentRef.current = "chat";
+        emptyResponseRetryCountRef.current = 0;
+        const lastToolResults = followUpMessages.map(m => m.content).join("\n");
+        const lastUserMsg = [...messagesRef.current].reverse().find(m => m.role === "user");
+        const minimalMessages: ChatMessage[] = [
+          { role: "system", content: "You are Pern. Summarize what you just did in one short sentence." },
+          { role: "user", content: lastUserMsg?.content || "Done?" },
+          { role: "assistant", content: lastToolResults },
+          { role: "user", content: "Done. Tell the user in one sentence." },
+        ];
+        await api.sendChatMessage(configRef.current.selected_model, minimalMessages);
         return;
       } catch (e) {
         console.error("[CHAT] Agentic loop failed:", e);
@@ -464,9 +476,52 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setIsGenerating(false);
   };
 
+  /**
+   * Run the harness plan: execute each step, update plan UI live, post results to chat.
+   */
+  const handleRunPlan = async (plan: TaskPlan) => {
+    setActivePlan(plan);
+    setPlanExecuting(true);
+    const chatMessages: string[] = [];
+
+    await executePlan(
+      plan,
+      (updatedPlan) => setActivePlan({ ...updatedPlan }),
+      (msg) => chatMessages.push(msg),
+    );
+
+    // Post the step results (errors only)
+    const newMsgs: ChatMessage[] = chatMessages.map((content) => ({
+      role: "assistant" as const,
+      content,
+    }));
+    
+    // Inject the final planner view into chat history
+    newMsgs.push({
+      role: "assistant",
+      content: "",
+      harness_plan: plan
+    });
+
+    // Add a final summary message indicating the plan is done
+    newMsgs.push({
+      role: "assistant",
+      content: "✓ All tasks completed.",
+    });
+
+    const nextMsgs = [...messagesRef.current, ...newMsgs];
+    messagesRef.current = nextMsgs;
+    setMessages(nextMsgs);
+    setPlanExecuting(false);
+    setActivePlan(null); // Clear floating planner since it's now in chat history
+  };
+
   const handleSend = async (overrideInput?: string, imageOpts?: any) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
     if (!textToSend.trim() && !imageOpts?.file || isGenerating) return;
+
+    // Clear any previous plan UI
+    setActivePlan(null);
 
     isVoiceSessionRef.current = overrideInput !== undefined;
 
@@ -653,6 +708,26 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setMessages(nextMessages);
     setInput("");
 
+    // --- Harness: LLM-based decomposition for complex multi-step requests ---
+    if (mightBeMultiStep(trimmedInput)) {
+      setIsGenerating(true);
+      setCurrentTask("Planning...");
+      try {
+        const plan = await decomposeTask(trimmedInput, configRef.current);
+        if (plan) {
+          setIsGenerating(false);
+          setCurrentTask(null);
+          handleRunPlan(plan);
+          return;
+        }
+      } catch (e) {
+        console.warn("[HARNESS] Planning call failed, falling through:", e);
+      }
+      setIsGenerating(false);
+      setCurrentTask(null);
+    }
+    // --- End harness check ---
+
     setIsGenerating(true);
     setCurrentTask(null);
 
@@ -746,11 +821,12 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         isGenerating={isGenerating}
         currentTask={currentTask}
         scrollRef={scrollRef}
+        activePlan={activePlan}
       />
       <ChatInput
         input={input}
         setInput={setInput}
-        isGenerating={isGenerating}
+        isGenerating={isGenerating || planExecuting}
         isListening={isListening}
         isSupported={isSupported}
         startListening={startListening}

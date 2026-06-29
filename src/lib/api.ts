@@ -81,6 +81,10 @@ export interface ChatMessage {
    * `content` still contains the human-readable description.
    */
   memory_tool_results?: MemoryToolResult[];
+  /**
+   * Optional payload to render the planner view in chat history
+   */
+  harness_plan?: any;
 }
 
 export type MemoryToolResult =
@@ -192,9 +196,6 @@ export interface SearchHit {
   score: number;
 }
 
-let chatTokenUnlisten: UnlistenFn | null = null;
-let chatCompleteUnlisten: UnlistenFn | null = null;
-
 export const api = {
   getOnboardingState: () => invoke<AppConfig>("get_onboarding_state"),
   listAvailableModels: () => invoke<ModelInfo[]>("list_available_models"),
@@ -239,20 +240,10 @@ export const api = {
     ),
 
   onChatToken: async (cb: (token: string) => void) => {
-    if (chatTokenUnlisten) {
-      chatTokenUnlisten();
-    }
-    const u = await listen<string>("chat-token", (e) => cb(e.payload));
-    chatTokenUnlisten = u;
-    return u;
+    return await listen<string>("chat-token", (e) => cb(e.payload));
   },
   onChatComplete: async (cb: () => void) => {
-    if (chatCompleteUnlisten) {
-      chatCompleteUnlisten();
-    }
-    const u = await listen<void>("chat-complete", () => cb());
-    chatCompleteUnlisten = u;
-    return u;
+    return await listen<void>("chat-complete", () => cb());
   },
 
   ...whatsappApi,

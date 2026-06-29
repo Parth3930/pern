@@ -1,4 +1,4 @@
-use crate::skills::{sanitize_skill_name, Skill, SkillStore};
+use crate::skills::SkillStore;
 use chrono::{Local, Timelike};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -143,82 +143,34 @@ impl LearnerData {
             .collect();
         strong_sequences.sort_by(|a, b| b.1.cmp(&a.1));
 
-        let mut valid_sequence_skills = HashSet::new();
-
         for (sequence, _count) in &strong_sequences {
             let parts: Vec<&str> = sequence.split(" -> ").collect();
             if parts.len() == 2 {
                 let tool_a = parts[0];
                 let tool_b = parts[1];
-
-                // Sort tool names to ensure A -> B and B -> A produce the same skill name
-                let mut sorted_parts = vec![tool_a.to_string(), tool_b.to_string()];
-                sorted_parts.sort();
-                let skill_name = sanitize_skill_name(&format!("auto-{}-and-{}", sorted_parts[0], sorted_parts[1]));
-                valid_sequence_skills.insert(skill_name.clone());
-
-                if skills_store.skills.contains_key(&skill_name) {
-                    continue; // Already have this skill
-                }
-
                 let friendly_a = tool_a.replace('_', " ");
                 let friendly_b = tool_b.replace('_', " ");
 
-                // FIX #1: Generate NATURAL LANGUAGE trigger patterns instead of raw tool names
-                let natural_triggers = generate_sequence_triggers(tool_a, tool_b);
-
-                let description = format!(
-                    "Use when you want to {} and then {} together — the user does this often.",
+                // ponytail: YAGNI - don't auto-generate actual skills, just log insights.
+                let insight_text = format!(
+                    "I noticed you often use {} and {} together.",
                     friendly_a, friendly_b
                 );
-
-                let content = format!(
-                    "# Auto-Detected Workflow: {} and {}\n\n\
-                    ## Overview\n\
-                    The user frequently does `{}` and `{}` together.\n\n\
-                    ## Steps\n\
-                    1. Execute `{}`\n\
-                    2. Then execute `{}`\n\n\
-                    ## Example\n\
-                    User: \"[does the usual combo]\"\n\
-                    OUTPUT: [{{\"tool\":\"{}\",\"args\":{{...}}}},{{\"tool\":\"{}\",\"args\":{{...}}}}]\n\
-                    ",
-                    friendly_a, friendly_b,
-                    friendly_a, friendly_b,
-                    tool_a, tool_b,
-                    tool_a, tool_b
-                );
-
-                let skill = Skill {
-                    name: skill_name.clone(),
-                    description,
-                    version: "1.0.0".to_string(),
-                    author: "Pern (auto-generated)".to_string(),
-                    trigger_patterns: natural_triggers,
-                    related_tools: vec![tool_a.to_string(), tool_b.to_string()],
-                    tags: vec!["auto-generated".to_string(), "workflow".to_string()],
-                    content,
-                    usage_count: 0,
-                    auto_generated: true,
-                };
-
-                skills_store.upsert(skill)?;
-
-                self.insights.push(LearnedInsight {
-                    category: "suggestion".to_string(),
-                    insight: format!(
-                        "I noticed you often use {} and {} together. I created a '{}' skill for this workflow.",
-                        friendly_a, friendly_b, skill_name
-                    ),
-                    confidence: 0.7,
-                    related_tools: vec![tool_a.to_string(), tool_b.to_string()],
-                });
+                let already_has = self.insights.iter().any(|i| i.insight == insight_text);
+                if !already_has {
+                    self.insights.push(LearnedInsight {
+                        category: "suggestion".to_string(),
+                        insight: insight_text,
+                        confidence: 0.7,
+                        related_tools: vec![tool_a.to_string(), tool_b.to_string()],
+                    });
+                }
             }
         }
 
-        // Cleanup old/unsorted auto-generated sequence skills that are not in valid_sequence_skills
+        // Cleanup any legacy auto-generated sequence skills
         let to_remove: Vec<String> = skills_store.skills.values()
-            .filter(|s| s.auto_generated && s.name.starts_with("auto-") && !valid_sequence_skills.contains(&s.name))
+            .filter(|s| s.auto_generated && s.name.starts_with("auto-"))
             .map(|s| s.name.clone())
             .collect();
 
@@ -243,18 +195,12 @@ impl LearnerData {
             .flat_map(|(seq, _)| seq.split(" -> ").map(|s| s.to_string()).collect::<Vec<_>>())
             .collect();
 
-        let mut valid_frequent_skills = HashSet::new();
-
         for (tool, count) in &favorite_tools {
-            // Skip creating or retaining individual frequent skills for tools in strong sequences
             if strong_sequence_tools.contains(tool) {
                 continue;
             }
 
-            let skill_name = sanitize_skill_name(&format!("frequent-{}", tool));
-            valid_frequent_skills.insert(skill_name.clone());
-
-            // Add insight if not already present
+            // ponytail: YAGNI - no need to generate skills for frequent tools. Just insights.
             let already_has = self.insights.iter().any(|i| {
                 i.category == "preference" && i.insight.contains(tool)
             });
@@ -269,85 +215,11 @@ impl LearnerData {
                     related_tools: vec![tool.clone()],
                 });
             }
-
-            // Create skill for heavily-used single tool (15+ uses, no skill exists yet)
-            if *count >= 15 && !skills_store.skills.contains_key(&skill_name) {
-                // Check if args are consistent
-                let consistent_args = self.stats.tool_arg_snippets.get(tool)
-                    .map(|snips| snips.len() >= 4 && snips.iter().all(|s| {
-                        s.chars().take(50).collect::<String>() == snips[0].chars().take(50).collect::<String>()
-                    }))
-                    .unwrap_or(false);
-
-                let natural_triggers = generate_tool_triggers(tool);
-
-                let content = if consistent_args {
-                    let example = self.stats.tool_arg_snippets.get(tool)
-                        .and_then(|snips| snips.first())
-                        .cloned()
-                        .unwrap_or_default();
-                    format!(
-                        "# Frequently Used Tool: {}\n\n\
-                        ## Overview\n\
-                        The user uses '{}' frequently ({} times) — always with similar arguments.\n\n\
-                        ## Typical Usage\n\
-                        ```\n\
-                        Tool: `{}`\n\
-                        Args: {}\n\
-                        ```\n\
-                        ## Steps\n\
-                        1. Call `{}` with the above arguments\n",
-                        tool.replace('_', " "),
-                        tool.replace('_', " "), count,
-                        tool, example,
-                        tool
-                    )
-                } else {
-                    format!(
-                        "# Frequently Used Tool: {}\n\n\
-                        ## Overview\n\
-                        The user uses '{}' frequently ({} times). This is a go-to tool.\n\n\
-                        ## Usage\n\
-                        Tool: `{}`\n\
-                        Args vary per use.\n",
-                        tool.replace('_', " "),
-                        tool.replace('_', " "), count,
-                        tool
-                    )
-                };
-
-                let skill = Skill {
-                    name: skill_name.clone(),
-                    description: format!(
-                        "The user frequently uses '{}' ({} times) — a key tool for them.",
-                        tool.replace('_', " "), count
-                    ),
-                    version: "1.0.0".to_string(),
-                    author: "Pern (auto-generated)".to_string(),
-                    trigger_patterns: natural_triggers,
-                    related_tools: vec![tool.clone()],
-                    tags: vec!["auto-generated".to_string(), "preference".to_string()],
-                    content,
-                    usage_count: 0,
-                    auto_generated: true,
-                };
-                skills_store.upsert(skill)?;
-
-                self.insights.push(LearnedInsight {
-                    category: "suggestion".to_string(),
-                    insight: format!(
-                        "You use '{}' a lot ({} times). I created a '{}' preference skill to remember this.",
-                        tool.replace('_', " "), count, skill_name
-                    ),
-                    confidence: 0.7,
-                    related_tools: vec![tool.clone()],
-                });
-            }
         }
 
-        // Cleanup old frequent skills that are no longer valid (e.g. because they are now part of a sequence)
+        // Cleanup old frequent skills
         let to_remove: Vec<String> = skills_store.skills.values()
-            .filter(|s| s.auto_generated && s.name.starts_with("frequent-") && !valid_frequent_skills.contains(&s.name))
+            .filter(|s| s.auto_generated && s.name.starts_with("frequent-"))
             .map(|s| s.name.clone())
             .collect();
 
@@ -521,174 +393,4 @@ impl LearnerData {
         lines.join("\n")
     }
 }
-
-// ── NATURAL LANGUAGE TRIGGER GENERATORS ──
-
-/// Generate natural language trigger patterns for a tool sequence (A → B).
-/// E.g., "send_whatsapp_message → toggle_whatsapp" generates triggers like:
-/// "send whatsapp and toggle whatsapp", etc.
-fn generate_sequence_triggers(tool_a: &str, tool_b: &str) -> Vec<String> {
-    let mut triggers = Vec::new();
-
-    // Friendly names
-    let friendly_a = tool_a.replace('_', " ");
-    let friendly_b = tool_b.replace('_', " ");
-
-    // Both friendly names together
-    triggers.push(format!("{} and {}", friendly_a, friendly_b));
-    triggers.push(format!("{} then {}", friendly_a, friendly_b));
-    triggers.push(format!("{} {}", friendly_a, friendly_b));
-
-    // Individual keywords
-    let keywords_a = extract_keywords(tool_a);
-    let keywords_b = extract_keywords(tool_b);
-
-    // Cross-product keyword combinations
-    for kw_a in &keywords_a {
-        for kw_b in &keywords_b {
-            if kw_a != kw_b {
-                triggers.push(format!("{} and {}", kw_a, kw_b));
-                triggers.push(format!("{} then {}", kw_a, kw_b));
-            }
-        }
-    }
-
-    // Action-based patterns: prefix verbs like "do X where I need to Y"
-    for kw_a in &keywords_a {
-        for kw_b in &keywords_b {
-            triggers.push(format!("use {} and then use {}", kw_a, kw_b));
-            triggers.push(format!("need to {} and {}", kw_a, kw_b));
-        }
-    }
-
-    deduplicate_triggers(triggers)
-}
-
-/// Generate natural language trigger patterns for a single tool.
-fn generate_tool_triggers(tool: &str) -> Vec<String> {
-    let mut triggers = Vec::new();
-
-    let friendly = tool.replace('_', " ");
-    triggers.push(friendly.clone());
-
-    let keywords = extract_keywords(tool);
-    for kw in &keywords {
-        triggers.push(kw.clone());
-    }
-
-    deduplicate_triggers(triggers)
-}
-
-/// Extract meaningful natural-language keywords from a tool name.
-/// "send_whatsapp_message" → ["send whatsapp", "whatsapp message", "message",
-///                              "send", "whatsapp", "wa", "whats app"]
-fn extract_keywords(tool: &str) -> Vec<String> {
-    let parts: Vec<&str> = tool.split('_').filter(|p| !p.is_empty()).collect();
-    if parts.is_empty() {
-        return vec![tool.to_string()];
-    }
-
-    let mut keywords = Vec::new();
-
-    // Each individual word
-    for part in &parts {
-        let lower = part.to_lowercase();
-        if !lower.is_empty() {
-            keywords.push(lower.clone());
-        }
-    }
-
-    // Bigrams (word pairs)
-    for window in parts.windows(2) {
-        keywords.push(format!("{} {}", window[0], window[1]).to_lowercase());
-    }
-
-    // Full space-separated name
-    let full: String = parts.join(" ");
-    keywords.push(full.clone());
-
-    // Verb prefix patterns — what users actually say
-    let verb = parts[0];
-    let rest: String = parts[1..].join(" ");
-    match verb {
-        "send" => {
-            keywords.push(format!("send {}", rest));
-            keywords.push(format!("message {}", rest));
-            keywords.push("text".to_string());
-            keywords.push("message".to_string());
-        }
-        "launch" => {
-            keywords.push(format!("open {}", rest));
-            keywords.push(format!("launch {}", rest));
-            keywords.push(format!("start {}", rest));
-            keywords.push("open".to_string());
-        }
-        "close" => {
-            keywords.push(format!("close {}", rest));
-            keywords.push(format!("quit {}", rest));
-            keywords.push(format!("exit {}", rest));
-        }
-        "toggle" => {
-            keywords.push(format!("toggle {}", rest));
-            keywords.push(format!("turn {} off", rest));
-            keywords.push(format!("turn {} on", rest));
-            keywords.push(format!("enable {}", rest));
-            keywords.push(format!("disable {}", rest));
-            keywords.push("enable".to_string());
-            keywords.push("disable".to_string());
-            keywords.push("turn on".to_string());
-            keywords.push("turn off".to_string());
-        }
-        "discord" => {
-            keywords.push("discord".to_string());
-            keywords.push("server".to_string());
-            keywords.push("members".to_string());
-        }
-        _ => {}
-    }
-
-    // Product/app name aliases
-    for part in &parts {
-        match part.to_lowercase().as_str() {
-            "whatsapp" => {
-                keywords.push("wa".to_string());
-                keywords.push("whats app".to_string());
-                keywords.push("whatsapp message".to_string());
-            }
-            "discord" => {
-                keywords.push("dc".to_string());
-                keywords.push("disc".to_string());
-            }
-            "spotify" => {
-                keywords.push("spot".to_string());
-            }
-            "email" => {
-                keywords.push("mail".to_string());
-                keywords.push("email".to_string());
-            }
-            "gmail" => {
-                keywords.push("gmail".to_string());
-                keywords.push("mail".to_string());
-            }
-            _ => {}
-        }
-    }
-
-    keywords
-}
-
-fn deduplicate_triggers(triggers: Vec<String>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut result = Vec::new();
-    for t in triggers {
-        let lower = t.to_lowercase().trim().to_string();
-        if !lower.is_empty() && seen.insert(lower.clone()) {
-            result.push(lower);
-        }
-    }
-    // Keep a reasonable cap — too many trigger patterns waste memory + matching time
-    if result.len() > 25 {
-        result.truncate(25);
-    }
-    result
-}
+

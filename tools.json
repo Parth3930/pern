@@ -722,6 +722,30 @@
     },
     {
       "categories": [
+        "whatsapp"
+      ],
+      "text": "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"{generated_content}\")"
+    },
+    {
+      "categories": [
+        "discord"
+      ],
+      "text": "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"{generated_content}\")"
+    },
+    {
+      "categories": [
+        "email"
+      ],
+      "text": "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"{generated_content}\")"
+    },
+    {
+      "categories": [
+        "whatsapp"
+      ],
+      "text": "User Request: ask rahul how he doing on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Hey Rahul, how are you doing?\")"
+    },
+    {
+      "categories": [
         "agents",
         "whatsapp"
       ],
