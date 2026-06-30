@@ -103,12 +103,11 @@ async function runActionStep(
 
   // Inject generated content so the model can reference it (just the values)
   const generatedStr = Object.values(plan.generatedContent).join("\n\n");
-
-  const contextBlock = generatedStr
+  const needsGeneratedContent = !!generatedStr && /\b(send|post|email|message|dm)\b/i.test(step.prompt);
+  const contextBlock = needsGeneratedContent
     ? `[Generated content:\n${generatedStr}]\n\nIMPORTANT: If the task is to send or post the generated content, you MUST use the exact string "{generated_content}" as the message argument. Do NOT write out the text itself. Example: message="{generated_content}"\n\n`
     : "";
-
-  const taskPrompt = generatedStr 
+  const taskPrompt = needsGeneratedContent
     ? `${step.prompt} (CRITICAL: Use the exact string "{generated_content}" for the message/post argument!)`
     : step.prompt;
 
@@ -129,8 +128,7 @@ async function runActionStep(
 
   const call = toolCalls[0];
   
-  // Inject the actual generated content into the arguments if requested
-  if (generatedStr) {
+  if (needsGeneratedContent) {
     for (const key in call.args) {
       if (typeof call.args[key] === "string" && call.args[key] === "{generated_content}") {
         call.args[key] = generatedStr;

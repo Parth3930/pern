@@ -485,17 +485,15 @@ function detectRequiredToolCategories(
     categories.add("discord");
   }
 
-  // 3. Email Matcher
-  const hasEmailTermsOtherThanApp =
-    /\b(send|write|draft|smtp|subject|body)\b/i.test(normalized) ||
+  const hasExplicitEmailCue =
+    /\b(email|e-mail|mail|smtp|subject|body)\b/i.test(normalized) ||
     /\S+@\S+/.test(normalized);
   const onlyEmailAsApp =
     /\b(open|launch|start|run|close|quit|exit)\b.{0,50}\b(gmail|mail|email)\b/i.test(
       normalized,
-    ) && !hasEmailTermsOtherThanApp;
+    ) && !hasExplicitEmailCue;
   const isEmail =
-    (/\b(email|mail|smtp|subject|body)\b/i.test(normalized) ||
-      /\S+@\S+/.test(normalized)) &&
+    hasExplicitEmailCue &&
     !onlyEmailAsApp;
   if (isEmail) {
     categories.add("email");

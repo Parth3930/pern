@@ -557,7 +557,7 @@ pub const RULES: &[RuleDefinition] = &[
         categories: &["whatsapp", "discord"],
     },
     RuleDefinition {
-        text: "   f. Preserve the exact spelling and casing of all names and recipients as written in the request.",
+        text: "   f. For email, only use send_email when the user explicitly says email/mail or provides an email address. If they name a person without an email address, prefer WhatsApp instead of guessing email.",
         categories: &["email"],
     },
     RuleDefinition {

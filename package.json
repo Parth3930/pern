@@ -35,6 +35,7 @@
     "codegen": "node scripts/sync-tools.js",
     "dev": "npm run codegen && vite",
     "build": "npm run codegen && tsc && vite build",
+    "planner:test": "bun scripts/planner-regression.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "android:build": "tauri android build --target aarch64"

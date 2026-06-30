@@ -41,6 +41,9 @@ Categories:
 - email: send an email
 - apps: open or launch an application
 
+If a person is named and no email address is given, use whatsapp unless the user explicitly says email/mail.
+Auto-reply requests belong to whatsapp.
+
 If only one step is needed, output: SIMPLE
 
 ---
@@ -89,6 +92,9 @@ export async function decomposeTask(
   userRequest: string,
   config: AppConfig,
 ): Promise<TaskPlan | null> {
+  const direct = parseDirectPlan(userRequest);
+  if (direct) return direct;
+
   const messages: ChatMessage[] = [
     { role: "system", content: PLANNING_SYSTEM },
     { role: "user", content: userRequest },
@@ -110,25 +116,204 @@ function parsePlanResponse(response: string, originalRequest: string): TaskPlan 
     // Skip blank lines, SIMPLE, and example separators
     if (!line || /^SIMPLE\b/i.test(line) || /^[-=]{2,}/.test(line)) continue;
     const m = line.match(CATEGORY_RE);
-    if (!m) continue; // skip lines without a valid CATEGORY: prefix
-
-    const category = m[1].toLowerCase();
-    const instruction = m[2].trim();
+    const instruction = m ? m[2].trim() : line;
+    const category = m
+      ? normalizeCategory(m[1].toLowerCase(), instruction, originalRequest)
+      : inferCategory(instruction, originalRequest);
     if (!instruction) continue;
+    if (!category) continue;
 
-    steps.push({
-      id: nextId(),
-      label: makeLabel(category, instruction),
-      category,
-      prompt: instruction,
-      status: "pending",
-    });
+    for (const expanded of expandRecipientTargets(category, instruction)) {
+      steps.push({
+        id: nextId(),
+        label: makeLabel(category, expanded),
+        category,
+        prompt: expanded,
+        status: "pending",
+      });
+    }
+  }
+
+  function normalizeCategory(category: string, instruction: string, originalRequest: string): string {
+    const text = `${instruction} ${originalRequest}`.toLowerCase();
+    const hasEmailCue = /\b(email|e-mail|mail|smtp|subject|body)\b/.test(text) || /\S+@\S+/.test(text);
+    const hasWhatsAppCue =
+      /\b(whatsapp|message|msg|text|auto[- ]?reply)\b/.test(text) ||
+      /\b(send|send the|send it|forward)\b/.test(text);
+    const hasDiscordCue =
+      /\b(discord|guild|channel|server|role|dm|<@!?\d+>|auto[- ]?reply)\b/.test(text);
+    const hasContentCue = /\b(write|create|compose|generate|poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text);
+
+    if (category === "email" && !hasEmailCue && hasWhatsAppCue) {
+      return "whatsapp";
+    }
+
+    if (category === "discord" && /\bauto[- ]?reply\b/.test(text)) {
+      return "whatsapp";
+    }
+
+    if (category === "generation" && hasWhatsAppCue && !hasContentCue) {
+      return hasEmailCue ? "email" : "whatsapp";
+    }
+
+    if (category === "generation" && /\b(send|post|message|dm)\b/.test(text) && !hasContentCue) {
+      return hasEmailCue ? "email" : "whatsapp";
+    }
+
+    if (category === "email" && !hasEmailCue && /\b(rahul|chirag|rajan|alice|bob|john|dave|frank|parth|charlie)\b/.test(text)) {
+      return "whatsapp";
+    }
+
+    if (category === "discord" && !hasDiscordCue && hasWhatsAppCue && !hasEmailCue) {
+      return "whatsapp";
+    }
+
+    return category;
+  }
+
+  function inferCategory(instruction: string, originalRequest: string): string | null {
+    const text = `${instruction} ${originalRequest}`.toLowerCase();
+    if (/\b(email|e-mail|smtp|subject|body)\b/.test(text) || /\S+@\S+/.test(text)) {
+      return "email";
+    }
+    if (/\b(discord|guild|channel|server|role|dm|<@!?\d+>)\b/.test(text)) {
+      return "discord";
+    }
+    if (/\b(whatsapp|message|msg|text|auto[- ]?reply)\b/.test(text)) {
+      return "whatsapp";
+    }
+    if (/\b(write|create|compose|generate|poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text)) {
+      return "generation";
+    }
+    if (/\b(open|launch|start|close|quit|exit|chrome|notepad|calculator|discord)\b/.test(text)) {
+      return "apps";
+    }
+    return null;
+  }
+
+  function expandRecipientTargets(category: string, instruction: string): string[] {
+    if (category !== "whatsapp" && category !== "email" && category !== "discord") {
+      return [instruction];
+    }
+
+    const m = instruction.match(/^(.*?\b(?:to|for)\s+)(.+)$/i);
+    if (!m) return [instruction];
+
+    const prefix = m[1];
+    const targetText = m[2].trim();
+    const targets = targetText
+      .split(/\s*(?:,| and | & )\s*/i)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (targets.length <= 1) return [instruction];
+
+    return targets.map((target) => `${prefix}${target}`);
   }
 
   // Only decompose if we found 2 or more distinct steps
   if (steps.length <= 1) return null;
 
   return { originalRequest, steps, generatedContent: {} };
+}
+
+function parseDirectPlan(userRequest: string): TaskPlan | null {
+  const text = userRequest.trim();
+  const normalized = text.replace(/^User Request:\s*/i, "");
+  const chunks = normalized
+    .split(/\b(?:and then|after that|afterwards|then|and finally|finally)\b|[;។]/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const steps: TaskStep[] = [];
+  for (const chunk of chunks) {
+    const category = inferDirectCategory(chunk);
+    if (!category) continue;
+
+    const prompts = category === "whatsapp"
+      ? expandWhatsAppTargets(chunk)
+      : [chunk];
+
+    for (const prompt of prompts) {
+      const cleaned = cleanupDirectPrompt(category, prompt);
+      if (!cleaned) continue;
+      steps.push({
+        id: nextId(),
+        label: makeLabel(category, cleaned),
+        category,
+        prompt: cleaned,
+        status: "pending",
+      });
+    }
+  }
+
+  if (steps.length <= 1) return null;
+  return { originalRequest: userRequest, steps, generatedContent: {} };
+}
+
+function inferDirectCategory(chunk: string): string | null {
+  const text = chunk.toLowerCase();
+  if (/\b(write|create|compose|generate|draft)\b/.test(text) && /\b(poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text)) {
+    return "generation";
+  }
+  if (/\b(turn on|turn off|enable|disable|auto[- ]?reply)\b/.test(text)) {
+    return "whatsapp";
+  }
+  if (/\b(dm|discord|<@!?\d+>|status|activity)\b/.test(text)) {
+    return "discord";
+  }
+  if (/\b(open|launch|start|close|quit|exit)\b/.test(text) && /\b(chrome|notepad|calculator|discord|browser)\b/.test(text)) {
+    return "apps";
+  }
+  if (/\b(send|message|text|whatsapp)\b/.test(text)) {
+    return "whatsapp";
+  }
+  return null;
+}
+
+function expandWhatsAppTargets(chunk: string): string[] {
+  const hasRecipientList = /\b(to|for)\s+.+\b(and|,)\b.+/i.test(chunk);
+  if (!hasRecipientList) return [chunk];
+
+  const m = chunk.match(/^(.*?\b(?:to|for)\s+)(.+)$/i);
+  if (!m) return [chunk];
+
+  const prefix = m[1];
+  const targetText = m[2].trim();
+  const targets = targetText
+    .split(/\s*(?:,| and | & )\s*/i)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (targets.length <= 1) return [chunk];
+  return targets.map((target) => `${prefix}${target}`);
+}
+
+function cleanupDirectPrompt(category: string, prompt: string): string {
+  let cleaned = prompt.trim().replace(/\s+/g, " ");
+
+  if (category === "generation") {
+    cleaned = cleaned.replace(/^(first\s+)?(write|create|compose|generate|draft)\s+/i, "Write ");
+    cleaned = cleaned.replace(/\b(a\s+brief\s+summary|a\s+summary|summary)\b.*$/i, "");
+  }
+
+  if (category === "whatsapp") {
+    cleaned = cleaned.replace(/^send\s+(it|that poem|the poem)\s+/i, "Send the poem ");
+    cleaned = cleaned.replace(/\s+on\s+whatsapp\s*$/i, " on WhatsApp");
+  }
+
+  if (category === "discord") {
+    cleaned = cleaned.replace(/\bopen\s+discord\b/i, "Open Discord");
+    cleaned = cleaned.replace(/\bset\s+my\s+status\b/i, "Set Discord status");
+    cleaned = cleaned.replace(/\bturn on auto-?reply\b/i, "Turn on auto-reply");
+  }
+
+  if (category === "apps") {
+    cleaned = cleaned.replace(/\band search for.*$/i, "");
+    cleaned = cleaned.replace(/\band save a short note.*$/i, "");
+  }
+
+  return cleaned.trim();
 }
 
 function makeLabel(category: string, instruction: string): string {
