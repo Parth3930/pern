@@ -1,32 +1,12 @@
-const fs = require("fs");
-const path = require("path");
-// __dirname is scripts/ so log goes to scripts/minecraft_bot.log
-const logPath = path.join(__dirname, "minecraft_bot.log");
-const logFile = fs.createWriteStream(logPath, { flags: "w" });
-
-console.log = function (...args) {
-  const msg = args
-    .map((x) => (typeof x === "object" ? JSON.stringify(x) : x))
-    .join(" ");
-  logFile.write(`[LOG] ${new Date().toISOString()} ${msg}\n`);
-};
-
-console.error = function (...args) {
-  const msg = args
-    .map((x) => (typeof x === "object" ? JSON.stringify(x) : x))
-    .join(" ");
-  logFile.write(`[ERR] ${new Date().toISOString()} ${msg}\n`);
-};
-
 const mineflayer = require("mineflayer");
 const { Vec3 } = require("vec3");
 const { pathfinder, goals } = require("mineflayer-pathfinder");
 const customPathfinder = require("./bot/custom_pathfinder.cjs");
 const {
-  getUserPlayer,
   getFollowMovements,
   cancelCurrentTask,
   getAIResponse,
+  getAIDecision,
   threatOf,
   hasSword,
   sleep,
@@ -35,13 +15,12 @@ const {
 const { startCombatLoop } = require("./bot/combat.cjs");
 const { recoverNearbyCraftingTable } = require("./bot/crafting.cjs");
 const { fetchBlock } = require("./bot/mining.cjs");
+const { startLifeLoop } = require("./bot/life.cjs");
 
 const port = parseInt(process.argv[2]) || 25565;
 const host = process.argv[3] || "localhost";
 const username = process.argv[4] || "Pern";
 const version = process.argv[5] || "1.20.4";
-
-console.log(`Connecting to ${host}:${port} as ${username} (${version})...`);
 
 const bot = mineflayer.createBot({
   host,
@@ -69,6 +48,7 @@ bot.botState = {
   isRecovering: false,
   lastKnownTargetPos: null, // cached last known position of follow target
   landingCooldownTicks: 0, // ticks after jump-place landing to prevent lookAt/movement interference
+  autonomousMode: true, // start in autonomous mode
 };
 
 // Cushion dig time to prevent server anti-cheat/lag rejections ("digging too fast")
@@ -77,49 +57,42 @@ bot.digTime = (block) =>
   Math.ceil(originalDigTime.call(bot, block) * 1.25 + 150);
 
 bot.on("spawn", () => {
-  console.log("Bot spawned!");
   bot.chat("Hello! I am Pern. Ready to help and survive!");
   bot.pathfinder.setMovements(getFollowMovements(bot));
 
   // Start combat loop
   startCombatLoop(bot);
 
-  // Auto-detect nearest player every 5s and begin following if no explicit target
+  // Start life loop (autonomous survival)
+  startLifeLoop(bot);
+
+  // Only maintain follow goal if explicitly following someone (set via chat command)
   setInterval(() => {
     const state = bot.botState;
     if (state.isBusy || state.isFighting || state.isRecovering) return;
-    // Prefer the existing explicit follow target if still visible
-    if (state.followTarget && bot.players[state.followTarget]?.entity) {
+
+    // Only follow if followTarget was explicitly set (not null)
+    if (!state.followTarget) return;
+
+    const targetPlayer = bot.players[state.followTarget];
+    if (targetPlayer?.entity) {
       if (!state.isFollowGoalSet) {
-        const p = bot.players[state.followTarget];
         bot.pathfinder.setMovements(getFollowMovements(bot));
-        bot.pathfinder.setGoal(new goals.GoalFollow(p.entity, 4), true);
-        state.isFollowGoalSet = true;
-        console.log(
-          `[AutoFollow] Re-applied goal for existing target: ${state.followTarget}`,
+        bot.pathfinder.setGoal(
+          new goals.GoalFollow(targetPlayer.entity, 4),
+          true,
         );
+        state.isFollowGoalSet = true;
+        console.log(`[FOLLOW] Re-established follow goal for ${state.followTarget}`);
       }
-      return;
-    }
-    // Otherwise pick the nearest visible player
-    const nearest = Object.values(bot.players)
-      .filter((p) => p.username !== bot.username && p.entity)
-      .sort(
-        (a, b) =>
-          bot.entity.position.distanceTo(a.entity.position) -
-          bot.entity.position.distanceTo(b.entity.position),
-      )[0];
-    if (nearest) {
-      console.log(
-        `[AutoFollow] Auto-following nearest player: ${nearest.username}`,
-      );
-      state.followTarget = nearest.username;
-      state.lastUser = nearest.username;
-      state.isFollowGoalSet = true;
-      bot.pathfinder.setMovements(getFollowMovements(bot));
-      bot.pathfinder.setGoal(new goals.GoalFollow(nearest.entity, 4), true);
     } else {
-      console.log("[AutoFollow] No visible players in range to follow.");
+      // Target not immediately visible — don't clear followTarget!
+      // The physicsTick handler will navigate via lastKnownTargetPos
+      // Only warn periodically (every 30s)
+      if (!state.lastFollowWarn || Date.now() - state.lastFollowWarn > 30000) {
+        console.log(`[FOLLOW] ${state.followTarget} not visible, navigating via last known position`);
+        state.lastFollowWarn = Date.now();
+      }
     }
   }, 5000);
 });
@@ -156,26 +129,6 @@ bot.on("physicsTick", () => {
     bot.pathfinder.isBuilding();
   const currentPos = bot.entity?.position;
 
-  if (!state.lastLogTime || Date.now() - state.lastLogTime > 1000) {
-    state.lastLogTime = Date.now();
-    console.log(
-      `[PhysicsTick] followTarget: ${state.followTarget}, isFollowGoalSet: ${state.isFollowGoalSet}, isBusy: ${state.isBusy}, isRecovering: ${state.isRecovering}, isMoving: ${isMoving}, isMining: ${isMining}, isBuilding: ${isBuilding}`,
-    );
-    if (state.followTarget) {
-      const followPlayer = bot.players[state.followTarget];
-      const followEntity = followPlayer?.entity;
-      if (followEntity) {
-        console.log(
-          `[PhysicsTick] target entity found at ${followEntity.position}, dist: ${currentPos?.distanceTo(followEntity.position).toFixed(1)}`,
-        );
-      } else {
-        console.log(
-          `[PhysicsTick] target entity NOT found in loaded range for user: ${state.followTarget}`,
-        );
-      }
-    }
-  }
-
   if (
     state.isFollowGoalSet &&
     !state.isFighting &&
@@ -194,8 +147,8 @@ bot.on("physicsTick", () => {
     // Prevents the main loop from looking at player or running stuck detection while
     // the custom pathfinder is still re-planning from the new position on the pillar
     if (state.landingCooldownTicks > 0) {
-      state.landingCooldownTicks--
-      return
+      state.landingCooldownTicks--;
+      return;
     }
 
     if (distToTarget > 4) {
@@ -223,19 +176,27 @@ bot.on("physicsTick", () => {
         const isNoPath = state.noPathTicks >= 60;
         state.stuckTicks = 0;
         state.noPathTicks = 0;
+
+        // Get target entity before using it
+        const targetPlayer = bot.players[state.followTarget];
+        const targetEntity = targetPlayer?.entity;
+
+        // Skip recovery if target is within walking distance (15 blocks)
+        if (targetEntity && distToTarget <= 15) {
+          bot.pathfinder.setMovements(getFollowMovements(bot));
+          bot.pathfinder.setGoal(new goals.GoalFollow(targetEntity, 4), true);
+          state.isFollowGoalSet = true;
+          return;
+        }
+
         state.isRecovering = true;
 
         (async () => {
           try {
-            console.log(
-              `[UNSTUCK] Bot is stuck (noPath: ${isNoPath})! Running recovery...`,
-            );
             bot.pathfinder.setGoal(null);
             bot.clearControlStates();
             await sleep(100);
 
-            const targetPlayer = bot.players[state.followTarget];
-            const targetEntity = targetPlayer?.entity;
             if (!targetEntity) return;
 
             // ponytail: if target is already close enough, skip recovery entirely
@@ -244,9 +205,6 @@ bot.on("physicsTick", () => {
                 targetEntity.position,
               );
               if (distToTarget <= 5) {
-                console.log(
-                  `[UNSTUCK] Target already within ${distToTarget.toFixed(1)} blocks, skipping recovery.`,
-                );
                 if (state.followTarget) {
                   bot.pathfinder.setMovements(getFollowMovements(bot));
                   bot.pathfinder.setGoal(
@@ -287,6 +245,13 @@ bot.on("physicsTick", () => {
               targetY = Math.min(foundGroundY, targetY);
             }
             const yDiff = targetY - botY;
+
+            // LLM-powered recovery strategy decision
+            const recoveryDecision = await getAIDecision(
+              bot,
+              `Stuck trying to reach player at Y difference ${yDiff} blocks, distance ${distToTarget.toFixed(1)} blocks`,
+              ["pillar", "mine", "wander", "wait"],
+            );
 
             const mcData = bot.mcData;
             const isScaffoldingItem = (item) => {
@@ -361,16 +326,15 @@ bot.on("physicsTick", () => {
                     if (recipe) {
                       try {
                         // ponytail: craft all available logs into planks (each log gives 4 planks)
-                        const totalLogs = logs.reduce((sum, l) => sum + l.count, 0);
+                        const totalLogs = logs.reduce(
+                          (sum, l) => sum + l.count,
+                          0,
+                        );
                         const planksToCraft = Math.min(totalLogs * 4, 128);
                         await bot.craft(recipe, planksToCraft, null);
                         await sleep(500);
                         currentCount = getScaffoldingCount();
-                      } catch (err) {
-                        console.log(
-                          `[CRAFTING] Failed to craft planks: ${err.message}`,
-                        );
-                      }
+                      } catch (err) {}
                     }
                   }
                 }
@@ -431,9 +395,6 @@ bot.on("physicsTick", () => {
                         bot.entity.position.distanceTo(targetEntity.position) <=
                           5
                       ) {
-                        console.log(
-                          "[UNSTUCK] Target now within range during mining, stopping.",
-                        );
                         break;
                       }
                       const block = bot.blockAt(pos);
@@ -482,9 +443,6 @@ bot.on("physicsTick", () => {
                     targetEntity &&
                     bot.entity.position.distanceTo(targetEntity.position) <= 5
                   ) {
-                    console.log(
-                      "[UNSTUCK] Target now within range during pillaring, stopping.",
-                    );
                     break;
                   }
 
@@ -558,9 +516,7 @@ bot.on("physicsTick", () => {
                     try {
                       await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
                       placed = true;
-                    } catch (err) {
-                      console.log(`[PILLARING] Place failed: ${err.message}`);
-                    }
+                    } catch (err) {}
                     bot.setControlState("jump", false);
 
                     // Wait for bot to land on the newly placed block
@@ -575,9 +531,6 @@ bot.on("physicsTick", () => {
                       bot.entity &&
                       bot.entity.position.y < standPos.y - 0.5
                     ) {
-                      console.log(
-                        "[PILLARING] Bot fell! Placing catch block under current position...",
-                      );
                       const fallPos = bot.entity.position.floored();
                       const belowFall = bot.blockAt(fallPos.offset(0, -1, 0));
                       if (belowFall) {
@@ -697,9 +650,6 @@ bot.on("physicsTick", () => {
     const hasFollowGoal =
       bot.pathfinder.goal && bot.pathfinder.goal.entity === followEntity;
     if (!hasFollowGoal || !state.isFollowGoalSet) {
-      console.log(
-        `[PhysicsTick] Applying GoalFollow for: ${state.followTarget}`,
-      );
       bot.pathfinder.setMovements(getFollowMovements(bot));
       bot.pathfinder.setGoal(new goals.GoalFollow(followEntity, 4), true);
       state.isFollowGoalSet = true;
@@ -716,9 +666,6 @@ bot.on("physicsTick", () => {
       Math.abs(currentGoal.z - Math.floor(cached.z)) < 2;
 
     if (!alreadyHeading && distToCached > 5) {
-      console.log(
-        `[PhysicsTick] Entity out of range. Moving toward last known pos: ${cached} (dist: ${distToCached.toFixed(1)})`,
-      );
       bot.pathfinder.setMovements(getFollowMovements(bot));
       bot.pathfinder.setGoal(
         new goals.GoalNear(cached.x, cached.y, cached.z, 4),
@@ -727,9 +674,6 @@ bot.on("physicsTick", () => {
       state.isFollowGoalSet = true;
     }
   } else {
-    console.log(
-      `[PhysicsTick] No entity and no cached position for: ${state.followTarget}`,
-    );
   }
 });
 
@@ -773,7 +717,6 @@ bot.on("chat", async (sender, message) => {
       bot.chat("Can't see you!");
       return;
     }
-    console.log(`[CHAT] Starting follow for ${sender}`);
 
     // Recover crafting table before following/moving back to user
     await recoverNearbyCraftingTable(bot).catch(() => {});

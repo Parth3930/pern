@@ -77,6 +77,44 @@ async function getAIResponse(sender, message) {
   }
 }
 
+async function getAIDecision(bot, situation, options) {
+  try {
+    const botPos = bot.entity?.position;
+    const health = bot.health ?? 20;
+    const food = bot.food ?? 20;
+    const inventory = bot.inventory.items().map(i => `${i.name} x${i.count}`).join(', ');
+    
+    const context = `
+Situation: ${situation}
+Bot Status: Health ${health}/20, Food ${food}/20
+Position: ${botPos ? `${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)}` : 'unknown'}
+Inventory: ${inventory || 'empty'}
+Available options: ${options.join(', ')}
+
+Respond with only the best option name, no explanation.
+`;
+
+    const res = await fetch("http://127.0.0.1:4891/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "local",
+        messages: [
+          { role: "system", content: "You are Pern, a Minecraft AI assistant. Choose the best action based on the situation. Respond with ONLY the option name, nothing else." },
+          { role: "user", content: context },
+        ],
+        stream: false,
+        max_tokens: 50,
+      }),
+    });
+    const data = await res.json();
+    const choice = data.choices[0].message.content.trim();
+    return options.find(opt => choice.toLowerCase().includes(opt.toLowerCase())) || options[0];
+  } catch {
+    return options[0]; // fallback to first option
+  }
+}
+
 async function safeDigWithTimeout(bot, block, timeoutMs = 20000) {
   try { bot.stopDigging(); } catch (_) {}
   bot.pathfinder.setGoal(null); // ponytail: stop movement before digging to avoid desync
@@ -183,8 +221,30 @@ async function equipBestTool(bot, block) {
   }
 }
 
-const foodItems = ['cooked_beef','cooked_porkchop','cooked_chicken','apple','bread','beef','porkchop','chicken','mutton'];
-const bestFood = (bot) => bot.inventory.items().find(i => foodItems.includes(i.name));
+const foodItems = [
+  'cooked_beef',
+  'cooked_porkchop',
+  'cooked_chicken',
+  'cooked_mutton',
+  'cooked_rabbit',
+  'cooked_cod',
+  'cooked_salmon',
+  'cooked_potato',
+  'bread',
+  'apple',
+  'carrot',
+  'potato',
+  'beef',
+  'porkchop',
+  'chicken',
+  'mutton',
+  'rabbit',
+  'cod',
+  'salmon'
+];
+const bestFood = (bot) => bot.inventory.items()
+  .filter(i => foodItems.includes(i.name))
+  .sort((a, b) => foodItems.indexOf(a.name) - foodItems.indexOf(b.name))[0];
 
 async function equipBest(bot) {
   const sw = bestSword(bot);
@@ -211,6 +271,7 @@ module.exports = {
   getFollowMovements,
   cancelCurrentTask,
   getAIResponse,
+  getAIDecision,
   safeDigWithTimeout,
   gotoWithTimeout,
   hasSword,

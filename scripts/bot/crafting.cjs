@@ -1,6 +1,48 @@
 const { goals } = require("mineflayer-pathfinder");
 const { sleep, gotoWithTimeout, safeDigWithTimeout } = require("./helpers.cjs");
 
+function isLogLikeItem(name) {
+  return /(?:_log|_wood|_stem|_hyphae)$/.test(name);
+}
+
+function logItemToPlanksName(logName) {
+  if (logName.endsWith('_log')) return `${logName.slice(0, -4)}_planks`;
+  if (logName.endsWith('_wood')) return `${logName.slice(0, -5)}_planks`;
+  if (logName.endsWith('_stem')) return `${logName.slice(0, -5)}_planks`;
+  if (logName.endsWith('_hyphae')) return `${logName.slice(0, -7)}_planks`;
+  return null;
+}
+
+function getPlankItems(bot) {
+  return bot.inventory.items().filter(i => i.name.endsWith('_planks'));
+}
+
+function countPlanks(bot) {
+  return getPlankItems(bot).reduce((sum, item) => sum + item.count, 0);
+}
+
+async function craftPlanksFromLogs(bot, minPlanks = 4) {
+  const logs = bot.inventory.items().filter(i => isLogLikeItem(i.name));
+  if (!logs.length) return countPlanks(bot) >= minPlanks;
+
+  while (countPlanks(bot) < minPlanks) {
+    const logItem = bot.inventory.items().find(i => isLogLikeItem(i.name));
+    if (!logItem) break;
+
+    const plankName = logItemToPlanksName(logItem.name);
+    const plankItem = plankName ? bot.mcData.itemsByName?.[plankName] : null;
+    if (!plankItem) break;
+
+    const recipe = bot.recipesFor(plankItem.id, null, 1, null)[0];
+    if (!recipe) break;
+
+    await bot.craft(recipe, 1, null);
+    await sleep(300);
+  }
+
+  return countPlanks(bot) >= minPlanks;
+}
+
 async function recoverNearbyCraftingTable(bot) {
   const botPos = bot.entity?.position;
   if (!botPos) return;
@@ -13,7 +55,6 @@ async function recoverNearbyCraftingTable(bot) {
 
   if (!tablePos) return;
 
-  console.log(`[CRAFTING] Found crafting table at ${tablePos}. Collecting before returning to user...`);
   try {
     const block = bot.blockAt(tablePos);
     if (!block || block.type === 0) return;
@@ -36,9 +77,7 @@ async function recoverNearbyCraftingTable(bot) {
       }
       await sleep(100);
     }
-    console.log(`[CRAFTING] Crafting table recovered successfully.`);
   } catch (err) {
-    console.log(`[CRAFTING] Failed to recover crafting table: ${err.message}`);
   }
 }
 
@@ -47,35 +86,18 @@ async function ensureCraftingTableInInventory(bot) {
   const tableItem = bot.inventory.items().find(i => i.name === 'crafting_table');
   if (tableItem) return true;
 
-  const logs = bot.inventory.items().filter(i => i.name.includes('log') || i.name.includes('wood') || i.name.includes('stem'));
-  const planks = bot.inventory.items().find(i => i.name.includes('planks'));
+  const planksReady = countPlanks(bot) >= 4 || await craftPlanksFromLogs(bot, 4);
+  if (!planksReady) return false;
 
-  if (!planks && logs.length === 0) return false;
-
-  console.log(`[CRAFTING] Attempting to auto-craft a crafting table to keep in inventory...`);
   try {
     const mcData = bot.mcData;
-    // Step 1: Craft logs to planks if we don't have enough planks (need 4 planks for table)
-    let plankCount = planks ? planks.count : 0;
-    if (plankCount < 4 && logs.length > 0) {
-      const recipe = bot.recipesFor(mcData.itemsByName.oak_planks ? mcData.itemsByName.oak_planks.id : mcData.itemsByName.planks.id, null, 1, null)[0] 
-        || bot.recipesFor(planks ? planks.type : null, null, 1, null)[0];
-      if (recipe) {
-        await bot.craft(recipe, 1, null);
-        await sleep(500);
-      }
-    }
-
-    // Step 2: Craft crafting table
     const tableRecipe = bot.recipesFor(mcData.itemsByName.crafting_table.id, null, 1, null)[0];
     if (tableRecipe) {
       await bot.craft(tableRecipe, 1, null);
-      console.log(`[CRAFTING] Crafted a crafting table successfully.`);
       await sleep(500);
-      return true;
+      return bot.inventory.items().some(i => i.name === 'crafting_table');
     }
   } catch (err) {
-    console.log(`[CRAFTING] Auto-crafting crafting table failed: ${err.message}`);
   }
   return false;
 }

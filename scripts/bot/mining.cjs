@@ -97,44 +97,62 @@ async function fetchBlock(bot, sender, blockType, targetCount = 8) {
       continue;
     }
 
-    // Find block candidates
-    const candidates = bot.findBlocks({ matching: Array.from(matchingBlockIds), maxDistance: 32, count: 64 });
-    const block = candidates
-      .filter(pos => {
-        const dy = pos.y - botPos.y;
-        const isUnderfoot = (Math.pow(pos.x + 0.5 - botPos.x, 2) + Math.pow(pos.z + 0.5 - botPos.z, 2) < 0.8) && (pos.y < botPos.y + 0.5);
-        return dy >= -3 && dy <= 10 && !isUnderfoot && !unreachable.some(p => p.equals(pos));
-      })
-      .sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos))
-      .map(pos => bot.blockAt(pos))
-      .find(b => b && b.type !== 0);
+    // Find block candidates with progressive search radius
+    let block = null;
+    let searchRadius = 64;
+    const maxSearchRadius = 256;
+    
+    while (!block && searchRadius <= maxSearchRadius) {
+      const candidates = bot.findBlocks({ matching: Array.from(matchingBlockIds), maxDistance: searchRadius, count: 128 });
+      block = candidates
+        .filter(pos => {
+          const dy = pos.y - Math.floor(botPos.y);
+          // Only exclude the block directly below the bot's feet (the one it's standing on)
+          const isUnderfoot = pos.x === Math.floor(botPos.x) && pos.z === Math.floor(botPos.z) && pos.y < Math.floor(botPos.y);
+          return dy >= -30 && dy <= 30 && !isUnderfoot && !unreachable.some(p => p.equals(pos));
+        })
+        .sort((a, b) => a.distanceTo(botPos) - b.distanceTo(botPos))
+        .map(pos => bot.blockAt(pos))
+        .find(b => b && b.type !== 0);
+      
+      if (!block) {
+        searchRadius *= 2;
+        bot.chat(`Searching for ${blockType} within ${searchRadius} blocks...`);
+      }
+    }
 
     if (!block) {
-      if (wanderAttempts++ < 3) {
-        const a = Math.random() * Math.PI * 2, d = 20 + Math.random() * 20;
+      if (wanderAttempts++ < 5) {
+        const a = Math.random() * Math.PI * 2, d = 50 + Math.random() * 50;
         const dest = botPos.offset(Math.cos(a)*d, 0, Math.sin(a)*d);
-        try { await gotoWithTimeout(bot, new goals.GoalXZ(dest.x, dest.z), 15000); } catch (_) {}
+        try { await gotoWithTimeout(bot, new goals.GoalXZ(dest.x, dest.z), 30000); } catch (_) {}
         unreachable.length = 0;
         continue;
       }
-      bot.chat(harvested > 0 ? `No more ${blockType}. Returning with ${harvested}.` : `No ${blockType} nearby.`);
+      bot.chat(harvested > 0 ? `No more ${blockType}. Returning with ${harvested}.` : `No ${blockType} found after extensive search.`);
       break;
     }
 
     try {
       const distXZ = Math.sqrt(Math.pow(block.position.x - botPos.x, 2) + Math.pow(block.position.z - botPos.z, 2));
       const distY = Math.abs(block.position.y - botPos.y);
+      console.log(`[MINING] Block at ${block.position.x}, ${block.position.y}, ${block.position.z}, distXZ: ${distXZ.toFixed(1)}, distY: ${distY.toFixed(1)}`);
+      
       if (distXZ > 2 || distY > 3 || !bot.canDigBlock(block)) {
         const targetY = block.position.y > botPos.y ? botPos.y : block.position.y;
+        console.log(`[MINING] Moving to block...`);
+        bot.pathfinder.setMovements(getFollowMovements(bot));
         await gotoWithTimeout(bot, new goals.GoalNear(block.position.x, targetY, block.position.z, 1.5), 15000);
         await sleep(250);
       }
       const cb = bot.blockAt(block.position);
       if (!cb || cb.type === 0 || !bot.canDigBlock(cb)) { 
+        console.log(`[MINING] Block no longer valid, marking unreachable`);
         unreachable.push(block.position); 
         continue; 
       }
       
+      console.log(`[MINING] Digging block...`);
       await safeDigWithTimeout(bot, cb, 20000);
       
       // Wait to pick up drops
@@ -172,16 +190,21 @@ async function fetchBlock(bot, sender, blockType, targetCount = 8) {
       
       bot.chat("Returning to you...");
       try {
+        console.log(`[MINING] Moving to player at ${playerEntity.position.x}, ${playerEntity.position.y}, ${playerEntity.position.z}`);
+        bot.pathfinder.setMovements(getFollowMovements(bot));
         await gotoWithTimeout(bot, new goals.GoalNear(playerEntity.position.x, playerEntity.position.y, playerEntity.position.z, 2), 20000);
         await bot.lookAt(playerEntity.position.offset(0, playerEntity.height, 0));
         bot.chat(`Here is the ${blockType}!`);
       } catch (err) {
+        console.log(`[MINING] Failed to return to player:`, err.message);
         bot.chat("I got stuck returning to you, dropping the items here!");
       }
     } else {
+      console.log(`[MINING] Can't see player ${sender}`);
       bot.chat("I can't see you, dropping the items here!");
     }
     const itemsToToss = bot.inventory.items().filter(i => matchingItemIds.has(i.type));
+    console.log(`[MINING] Tossing ${itemsToToss.length} item stacks`);
     for (const i of itemsToToss) { 
       await bot.tossStack(i).catch(()=>{}); 
       await sleep(250); 

@@ -67,7 +67,6 @@ function customPathfinder (bot) {
   let jumpStartTime = 0
   let landingAfterJump = false // wait for onGround after jump-place before moving
   let lastPlanTime = 0
-  let lastCustomLogTime = 0
 
   // ponytail: Re-create pathfinder object to avoid non-configurable property errors
   const originalPathfinder = bot.pathfinder
@@ -238,7 +237,6 @@ function customPathfinder (bot) {
 
   // ponytail: async pathfinder starting 3 concurrent search strategies (Walking, Standard, Aggressive)
     bot.pathfinder.getPathToAsync = (movements, goal, timeout = bot.pathfinder.thinkTimeout) => {
-      console.log(`[Pathfinder] getPathToAsync started. Start: ${bot.entity.position.floored()}, Goal: type=${goal.constructor.name || 'unknown'}`);
       // ponytail: dynamically register solid, non-gravity, non-interactable blocks as scaffolding
       for (const item of bot.inventory.items()) {
         const block = bot.registry.blocksByName[item.name]
@@ -282,7 +280,6 @@ function customPathfinder (bot) {
       )
       // searchRadius: scale with distance but cap at 100 to bound search space
       const searchRadius = Math.max(bot.pathfinder.searchRadius || 48, Math.min(goalDist * 1.3, 100))
-      console.log(`[Pathfinder] goalDist: ${goalDist.toFixed(1)}, effective searchRadius: ${searchRadius.toFixed(1)}`)
 
       const safeSettings = { ...baseMovementsSettings, canDig: false, scafoldingBlocks: [] }
       const standardSettings = { ...baseMovementsSettings, digCost: 2.0, placeCost: 1.0 }
@@ -309,11 +306,7 @@ function customPathfinder (bot) {
         if (Object.keys(results).length === 3) {
           resolved = true
           cleanup()
-          console.log(`[Pathfinder] safe status: ${results.safe?.status}, path length: ${results.safe?.path?.length}`);
-          console.log(`[Pathfinder] standard status: ${results.standard?.status}, path length: ${results.standard?.path?.length}`);
-          console.log(`[Pathfinder] aggressive status: ${results.aggressive?.status}, path length: ${results.aggressive?.path?.length}`);
           const bestResult = selectBestPath(results.safe, results.standard, results.aggressive)
-          console.log(`[Pathfinder] best strategy chosen: path length: ${bestResult?.path?.length}, status: ${bestResult?.status}`);
           if (bestResult && bestResult.path) {
             bestResult.path = bestResult.path.map(n => new Move(n.x, n.y, n.z, n.remainingBlocks, n.cost, n.toBreak, n.toPlace, n.parkour))
           }
@@ -674,23 +667,16 @@ function customPathfinder (bot) {
       returningPos = null
     }
 
-    if (stateGoal && stateMovements) {
-      if (Date.now() - lastCustomLogTime > 1000) {
-        lastCustomLogTime = Date.now();
-        console.log(`[Pathfinder] planning: ${bot.pathfinder.planning}, pathList.length: ${pathList.length}, pathUpdated: ${pathUpdated}, lastPlanDiff: ${Date.now() - lastPlanTime}ms`);
-      }
-    }
 
     // ponytail: pre-plan the next path in the background when the goal has changed or when the path is running out
     const needsPreplan = stateGoal && stateMovements && !bot.pathfinder.planning &&
                          (pathList.length <= 5 && (!pathUpdated || Date.now() - lastPlanTime > 2000))
  
     if (needsPreplan) {
-      if (pathList.length === 0) {
-        if (stateGoal.isEnd(bot.entity.position.floored())) {
+      if (pathList.length === 0) {          if (stateGoal.isEnd(bot.entity.position.floored())) {
           if (!dynamicGoal) {
-            console.log(`[Pathfinder] Goal already reached! Emitting goal_reached.`);
             bot.emit('goal_reached', stateGoal)
+
             stateGoal = null
             fullStop()
             return
@@ -698,7 +684,6 @@ function customPathfinder (bot) {
         }
       }
  
-      console.log(`[Pathfinder] Triggering async path plan towards goal: ${stateGoal.constructor.name}`);
       bot.pathfinder.planning = true
       lastPlanTime = Date.now()
       bot.pathfinder.getPathToAsync(stateMovements, stateGoal)

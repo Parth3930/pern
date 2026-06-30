@@ -185,7 +185,6 @@ ${guildIdToolsLines}
 }
 
 function main() {
-  console.log(`Reading tools definition from ${TOOLS_JSON_PATH}...`);
   if (!fs.existsSync(TOOLS_JSON_PATH)) {
     console.error(`Error: ${TOOLS_JSON_PATH} not found.`);
     process.exit(1);
@@ -194,17 +193,12 @@ function main() {
   const raw = fs.readFileSync(TOOLS_JSON_PATH, 'utf8');
   const data = JSON.parse(raw);
 
-  console.log('Generating TypeScript data...');
   const tsContent = generateTS(data);
   fs.writeFileSync(TS_OUTPUT_PATH, tsContent, 'utf8');
-  console.log(`Saved TS to ${TS_OUTPUT_PATH}`);
 
-  console.log('Generating Rust data...');
   const rsContent = generateRS(data);
   fs.writeFileSync(RS_OUTPUT_PATH, rsContent, 'utf8');
-  console.log(`Saved Rust to ${RS_OUTPUT_PATH}`);
 
-  console.log('Synchronization complete!');
 }
 
 main();
