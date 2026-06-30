@@ -100,7 +100,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       const shouldCompress = /(compress|shrink|smaller|reduce)/i.test(task);
       
       const hasTask = shouldRemoveBg || shouldConvertPng || shouldUpscale || shouldCompress;
-      const textOverride = selectedProject ? `fire pern in project ${selectedProject.name} to ${input}` : undefined;
+      const textOverride = selectedProject ? `[Context: User is currently viewing project '${selectedProject.name}']\nUser Request: ${input}` : undefined;
       
       onSend({ 
         task: hasTask ? { removeBg: shouldRemoveBg, png: shouldConvertPng, upscale: shouldUpscale } : null, 
@@ -115,7 +115,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
 
     if (selectedProject && input.trim()) {
-      onSend(undefined, `fire pern in project ${selectedProject.name} to ${input}`, selectedProject.name, input);
+      onSend(undefined, `[Context: User is currently viewing project '${selectedProject.name}']\nUser Request: ${input}`, selectedProject.name, input);
       setInput("");
       return;
     }

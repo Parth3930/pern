@@ -569,9 +569,10 @@ export async function executeSingleTool(
     }
   } else if (tc.tool === "join_minecraft_world") {
     const port = getNumberArg(tc.args, "port") || undefined;
+    const host = getStringArg(tc.args, "host") || undefined;
     const version = getStringArg(tc.args, "version") || undefined;
     try {
-      const msg = await api.joinMinecraftWorld(port, version);
+      const msg = await api.joinMinecraftWorld(port, host, version);
       result = { ok: true, message: msg };
     } catch (e) {
       result = { ok: false, error: getErrorMessage(e) };

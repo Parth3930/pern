@@ -1233,6 +1233,7 @@ export function detectActionIntent(
   }
 
   const commandPatterns = [
+    /\[Context: User is currently viewing project/i,
     /\b[a-zA-Z\s]+-\s*\+?[0-9\s-]{8,}\b/i,
     /\b(open|launch|start|run|close|quit|exit)\b.{0,30}\b(app|apps|both|them|it|all|spotify|chrome|notepad|whatsapp|gmail|mail|drive|google drive|obsidian|discord|calculator|vscode|terminal|browser|excel|word|powerpoint|slack|zoom|teams|skype|photoshop|illustrator|steam|epic|gog|battle.net|minecraft|roblox|vlc|player|settings|control panel|explorer|file manager|filemanager|files|cmd|powershell|bash|git bash|youtube|netflix|twitter|facebook|instagram|reddit|github)\b/i,
     /\b(send|write|draft|message|text|tell|ask|say|fire|run|execute|trigger|instruct|prompt|give)\b.{0,30}\b(email|mail|whatsapp|message|msg|parth|samarth|him|her|them|rahul|mom|dad|brother|sister|friend|chirag|rover|claude|hermes|codex|agy|free.?bu\w*|agent|pern)\b/i,

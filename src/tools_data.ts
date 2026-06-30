@@ -274,9 +274,9 @@ export const TOOLS = [
   {
     name: "join_minecraft_world",
     category: "minecraft",
-    description: "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
-    params: ["port", "version"],
-    signature: "- join_minecraft_world(port?: number, version?: string) -> Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4')."
+    description: "Spawns a bot player named Pern to join a Minecraft Java edition world (cracked servers supported via offline auth). host is the IP/domain of the server (defaults to 'localhost'), port is optional (defaults to auto-detect or 25565), version defaults to '1.20.4'.",
+    params: ["port", "host", "version"],
+    signature: "- join_minecraft_world(port?: number, host?: string, version?: string) -> Spawns a bot player named Pern to join a Minecraft Java edition world (cracked servers supported via offline auth). host is the IP/domain of the server (defaults to 'localhost'), port is optional (defaults to auto-detect or 25565), version defaults to '1.20.4'."
   },
   {
     name: "disconnect_minecraft_world",
@@ -496,11 +496,11 @@ export const FEW_SHOTS = [
   },
   {
     categories: ["files"],
-    text: "User Request: fire pern in project Pern to whats in this project?\\nPlan:\\n- list_dir(path=\".\")\\n- read_file(path=\"README.md\")"
+    text: "[Context: User is currently viewing project 'Pern']\nUser Request: whats in this project?\nPlan:\n- list_dir(path=\".\")\n- read_file(path=\"README.md\")\n- read_file(path=\"package.json\")\n- list_dir(path=\"src\")"
   },
   {
     categories: ["files"],
-    text: "User Request: read src/main.rs\\nPlan:\\n- read_file(path=\"src/main.rs\")"
+    text: "[Context: User is currently viewing project 'Pern']\nUser Request: read src/main.rs\nPlan:\n- read_file(path=\"src/main.rs\")"
   }
 ] as const;
 
@@ -657,7 +657,7 @@ export const TOOL_DESCRIPTIONS = {
   "forget_fact": "Removes a fact from long-term memory. key is the canonical name or any known alias of the fact to forget.",
   "list_automations": "Lists the user's saved automations. Returns a list of 'name: trigger description (N actions, last run ok/failed/never)' lines. Use this to discover what automations already exist before suggesting changes or running one. query is optional free-text filter (substring match on name + trigger); k defaults to 10 and caps the result count.",
   "run_automation": "Runs a saved automation by name immediately. Use list_automations first to discover the right name. Returns a confirmation line with the run id and overall ok/failed status.",
-  "join_minecraft_world": "Spawns a bot player named Pern to join the active Minecraft Java edition world (e.g. single-player LAN world or local server). Leaves port blank/null to auto-detect. version is the optional Minecraft version (defaults to '1.20.4').",
+  "join_minecraft_world": "Spawns a bot player named Pern to join a Minecraft Java edition world (cracked servers supported via offline auth). host is the IP/domain of the server (defaults to 'localhost'), port is optional (defaults to auto-detect or 25565), version defaults to '1.20.4'.",
   "disconnect_minecraft_world": "Disconnects the Pern bot player from the Minecraft world.",
   "read_file": "Reads the contents of a file in the project.",
   "list_dir": "Lists the contents of a directory in the project."
@@ -700,7 +700,7 @@ export const TOOL_PARAMS = {
   "forget_fact": ["key"],
   "list_automations": ["query", "k"],
   "run_automation": ["name"],
-  "join_minecraft_world": ["port", "version"],
+  "join_minecraft_world": ["port", "host", "version"],
   "disconnect_minecraft_world": [],
   "read_file": ["path"],
   "list_dir": ["path"]

@@ -362,7 +362,7 @@ export const api = {
 
   // Minecraft integration
   detectMinecraftLanPort: () => invoke<number | null>("detect_minecraft_lan_port"),
-  joinMinecraftWorld: (port?: number, version?: string) => invoke<string>("join_minecraft_world", { port: port ?? null, version: version ?? null }),
+  joinMinecraftWorld: (port?: number, host?: string, version?: string) => invoke<string>("join_minecraft_world", { port: port ?? null, host: host ?? null, version: version ?? null }),
   disconnectMinecraftWorld: () => invoke<string>("disconnect_minecraft_world"),
   getMinecraftStatus: () => invoke<boolean>("get_minecraft_status"),
 

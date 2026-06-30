@@ -8,6 +8,9 @@ export default function MinecraftSettings() {
   const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(false);
   
+  const [host, setHost] = useState<string>(() => {
+    return localStorage.getItem("pern_minecraft_host") || "";
+  });
   const [port, setPort] = useState<string>(() => {
     return localStorage.getItem("pern_minecraft_port") || "";
   });
@@ -35,6 +38,11 @@ export default function MinecraftSettings() {
     };
   }, [isExpanded]);
 
+  const handleHostChange = (val: string) => {
+    setHost(val);
+    localStorage.setItem("pern_minecraft_host", val);
+  };
+
   const handlePortChange = (val: string) => {
     const clean = val.replace(/\D/g, "");
     setPort(clean);
@@ -51,7 +59,8 @@ export default function MinecraftSettings() {
     setStatusMsg("");
     try {
       const p = port ? parseInt(port) : undefined;
-      const res = await api.joinMinecraftWorld(p, version);
+      const h = host || undefined;
+      const res = await api.joinMinecraftWorld(p, h, version);
       setIsConnected(true);
       setStatusMsg(res);
     } catch (e: any) {
@@ -90,7 +99,15 @@ export default function MinecraftSettings() {
       {isExpanded && (
         <div className="section-content" style={{ marginTop: "0.6rem", display: "flex", flexDirection: "column", gap: "0.5rem", padding: "0.25rem 0" }}>
           {/* Inputs Row */}
-          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "0.4rem", alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              className="minimal-input"
+              value={host}
+              onChange={(e) => handleHostChange(e.target.value)}
+              placeholder="IP / Host"
+              style={{ width: "110px", height: "30px", fontSize: "0.8rem", padding: "0.2rem 0.4rem" }}
+            />
             <input
               type="text"
               className="minimal-input"

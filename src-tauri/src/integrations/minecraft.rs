@@ -36,7 +36,7 @@ pub fn detect_minecraft_lan_port() -> Option<u16> {
 }
 
 #[tauri::command]
-pub async fn join_minecraft_world(port: Option<u16>, version: Option<String>) -> Result<String, String> {
+pub async fn join_minecraft_world(port: Option<u16>, host: Option<String>, version: Option<String>) -> Result<String, String> {
     // Kill existing process if running
     let mut proc_lock = get_minecraft_process().lock().unwrap();
     if let Some(mut old_child) = proc_lock.take() {
@@ -49,6 +49,7 @@ pub async fn join_minecraft_world(port: Option<u16>, version: Option<String>) ->
         _ => detect_minecraft_lan_port().unwrap_or(25565),
     };
 
+    let final_host = host.unwrap_or_else(|| "localhost".to_string());
     let final_version = version.unwrap_or_else(|| "1.20.4".to_string());
 
     let script_path = if std::path::Path::new("scripts/minecraft_bot.cjs").exists() {
@@ -60,7 +61,7 @@ pub async fn join_minecraft_world(port: Option<u16>, version: Option<String>) ->
     let mut cmd = std::process::Command::new("node");
     cmd.arg(script_path)
        .arg(final_port.to_string())
-       .arg("localhost")
+       .arg(&final_host)
        .arg("Pern")
        .arg(final_version);
 
@@ -70,10 +71,37 @@ pub async fn join_minecraft_world(port: Option<u16>, version: Option<String>) ->
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
     match cmd.spawn() {
-        Ok(child) => {
+        Ok(mut child) => {
+            // Read stdout and stderr in background threads so output is visible
+            if let Some(stderr_pipe) = child.stderr.take() {
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stderr_pipe);
+                    for line in reader.lines() {
+                        if let Ok(line) = line {
+                            eprintln!("[Minecraft Bot] {}", line);
+                        }
+                    }
+                });
+            }
+            if let Some(stdout_pipe) = child.stdout.take() {
+                std::thread::spawn(move || {
+                    use std::io::{BufRead, BufReader};
+                    let reader = BufReader::new(stdout_pipe);
+                    for line in reader.lines() {
+                        if let Ok(line) = line {
+                            println!("[Minecraft Bot] {}", line);
+                        }
+                    }
+                });
+            }
+
             *proc_lock = Some(child);
-            Ok(format!("Successfully spawned Minecraft bot on port {}", final_port))
+            Ok(format!("Successfully spawned Minecraft bot on {}:{}", final_host, final_port))
         }
         Err(e) => Err(format!("Failed to spawn bot: {}", e)),
     }

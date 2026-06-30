@@ -372,15 +372,15 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     };
 
     const plan: import("./taskPlanner").TaskPlan = {
-      id: `plan-${Date.now()}`,
-      originalGoal: "Execute Tools",
+      originalRequest: "Execute Tools",
       steps: toolCalls.map((tc, idx) => ({
         id: `step-${idx}`,
         label: getCurrentTaskLabel(tc),
         category: "system",
         prompt: tc.tool,
-        status: "pending"
-      }))
+        status: "pending",
+      })),
+      generatedContent: {},
     };
 
     for (let i = 0; i < toolCalls.length; i++) {
