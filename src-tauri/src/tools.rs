@@ -476,17 +476,55 @@ pub fn discord_tools_with_guild_id() -> Vec<&'static str> {
 const MAX_FEW_SHOTS: usize = 4;
 
 pub fn get_action_few_shots_filtered(categories: &[String]) -> String {
-    let examples: Vec<&tools_data::FewShotExample> = if categories.is_empty() {
-        tools_data::FEW_SHOTS.iter().collect()
-    } else {
-        tools_data::FEW_SHOTS
-            .iter()
-            .filter(|e| e.categories.is_empty() || e.categories.iter().any(|cat| categories.contains(&cat.to_string())))
-            .collect()
-    };
-    examples
+    let safe_examples: Vec<&tools_data::FewShotExample> = tools_data::FEW_SHOTS
+        .iter()
+        .filter(|e| e.categories.iter().all(|cat| categories.contains(&cat.to_string())))
+        .collect();
+
+    if categories.is_empty() {
+        return safe_examples
+            .into_iter()
+            .take(MAX_FEW_SHOTS)
+            .map(|e| e.text)
+            .collect::<Vec<_>>()
+            .join("\n\n");
+    }
+
+    let mut selected = Vec::new();
+    let mut added = std::collections::HashSet::new();
+
+    // 1. Force at least one safe example for each requested category (if possible)
+    for cat in categories {
+        if let Some(example) = safe_examples.iter().find(|e| e.categories.contains(&cat.as_str()) && !added.contains(&e.text)) {
+            selected.push(*example);
+            added.insert(example.text);
+        }
+    }
+
+    // 2. Fill the remaining slots up to MAX_FEW_SHOTS with other safe examples that have categories
+    for e in &safe_examples {
+        if selected.len() >= MAX_FEW_SHOTS {
+            break;
+        }
+        if !added.contains(&e.text) && !e.categories.is_empty() {
+            selected.push(*e);
+            added.insert(e.text);
+        }
+    }
+
+    // 3. Fill the remaining slots with universal safe examples (no categories)
+    for e in &safe_examples {
+        if selected.len() >= MAX_FEW_SHOTS {
+            break;
+        }
+        if !added.contains(&e.text) {
+            selected.push(*e);
+            added.insert(e.text);
+        }
+    }
+
+    selected
         .into_iter()
-        .take(MAX_FEW_SHOTS)
         .map(|e| e.text)
         .collect::<Vec<_>>()
         .join("\n\n")

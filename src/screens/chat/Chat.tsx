@@ -748,23 +748,13 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setMessages(nextMessages);
     setInput("");
 
-    // --- Harness: LLM-based decomposition for complex multi-step requests ---
+    // --- Harness: regex-based decomposition for complex multi-step requests ---
     if (mightBeMultiStep(trimmedInput)) {
-      setIsGenerating(true);
-      setCurrentTask("Planning...");
-      try {
-        const plan = await decomposeTask(trimmedInput, configRef.current);
-        if (plan) {
-          setIsGenerating(false);
-          setCurrentTask(null);
-          handleRunPlan(plan);
-          return;
-        }
-      } catch (e) {
-        console.warn("[HARNESS] Planning call failed, falling through:", e);
+      const plan = await decomposeTask(trimmedInput);
+      if (plan) {
+        handleRunPlan(plan);
+        return;
       }
-      setIsGenerating(false);
-      setCurrentTask(null);
     }
     // --- End harness check ---
 

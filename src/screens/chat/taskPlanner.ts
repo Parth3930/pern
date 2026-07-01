@@ -10,7 +10,7 @@
  * Just one small planning call + a simple line parser.
  */
 
-import { api, AppConfig, ChatMessage } from "../../lib/api";
+
 
 export interface TaskStep {
   id: string;
@@ -30,39 +30,6 @@ export interface TaskPlan {
 }
 
 // ---- Planning prompt ----
-
-const PLANNING_SYSTEM = `Break the user's request into steps. Output ONE LINE per step:
-CATEGORY: instruction
-
-Categories:
-- generation: write/create/compose/generate any content
-- whatsapp: send a WhatsApp message to someone
-- discord: set Discord status or activity
-- email: send an email
-- apps: open or launch an application
-
-If a person is named and no email address is given, use whatsapp unless the user explicitly says email/mail.
-Auto-reply requests belong to whatsapp.
-
-If only one step is needed, output: SIMPLE
-
----
-Example:
-User: Write a haiku about rust and message it to John on WhatsApp. Then set Discord to dnd with activity Debugging.
-generation: Write a haiku about how hard it is to write Rust code
-whatsapp: Send the haiku to John on WhatsApp
-discord: Set Discord status to dnd with activity Debugging
----
-Example:
-User: Open Chrome and also set my Discord status to idle.
-apps: Open Chrome
-discord: Set Discord status to idle
----
-Example:
-User: What time is it?
-SIMPLE
----
-Now output the steps for the user's request below. Only output step lines or SIMPLE, nothing else.`;
 
 // ---- Pre-filter ----
 // Avoids the planning LLM call for obviously simple single-step requests.
@@ -90,138 +57,18 @@ const nextId = () => `s${++_n}`;
  */
 export async function decomposeTask(
   userRequest: string,
-  config: AppConfig,
 ): Promise<TaskPlan | null> {
-  const direct = parseDirectPlan(userRequest);
-  if (direct) return direct;
-
-  const messages: ChatMessage[] = [
-    { role: "system", content: PLANNING_SYSTEM },
-    { role: "user", content: userRequest },
-  ];
-
-  const response = await callLLM(config.selected_model, messages);
-  return parsePlanResponse(response, userRequest);
-}
-
-// ---- Parsing ----
-
-const CATEGORY_RE = /^(generation|whatsapp|discord|email|apps):\s*(.+)$/i;
-
-function parsePlanResponse(response: string, originalRequest: string): TaskPlan | null {
-  const steps: TaskStep[] = [];
-
-  for (const raw of response.split("\n")) {
-    const line = raw.trim();
-    // Skip blank lines, SIMPLE, and example separators
-    if (!line || /^SIMPLE\b/i.test(line) || /^[-=]{2,}/.test(line)) continue;
-    const m = line.match(CATEGORY_RE);
-    const instruction = m ? m[2].trim() : line;
-    const category = m
-      ? normalizeCategory(m[1].toLowerCase(), instruction, originalRequest)
-      : inferCategory(instruction, originalRequest);
-    if (!instruction) continue;
-    if (!category) continue;
-
-    for (const expanded of expandRecipientTargets(category, instruction)) {
-      steps.push({
-        id: nextId(),
-        label: makeLabel(category, expanded),
-        category,
-        prompt: expanded,
-        status: "pending",
-      });
-    }
-  }
-
-  function normalizeCategory(category: string, instruction: string, originalRequest: string): string {
-    const text = `${instruction} ${originalRequest}`.toLowerCase();
-    const hasEmailCue = /\b(email|e-mail|mail|smtp|subject|body)\b/.test(text) || /\S+@\S+/.test(text);
-    const hasWhatsAppCue =
-      /\b(whatsapp|message|msg|text|auto[- ]?reply)\b/.test(text) ||
-      /\b(send|send the|send it|forward)\b/.test(text);
-    const hasDiscordCue =
-      /\b(discord|guild|channel|server|role|dm|<@!?\d+>|auto[- ]?reply)\b/.test(text);
-    const hasContentCue = /\b(write|create|compose|generate|poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text);
-
-    if (category === "email" && !hasEmailCue && hasWhatsAppCue) {
-      return "whatsapp";
-    }
-
-    if (category === "discord" && /\bauto[- ]?reply\b/.test(text)) {
-      return "whatsapp";
-    }
-
-    if (category === "generation" && hasWhatsAppCue && !hasContentCue) {
-      return hasEmailCue ? "email" : "whatsapp";
-    }
-
-    if (category === "generation" && /\b(send|post|message|dm)\b/.test(text) && !hasContentCue) {
-      return hasEmailCue ? "email" : "whatsapp";
-    }
-
-    if (category === "email" && !hasEmailCue && /\b(rahul|chirag|rajan|alice|bob|john|dave|frank|parth|charlie)\b/.test(text)) {
-      return "whatsapp";
-    }
-
-    if (category === "discord" && !hasDiscordCue && hasWhatsAppCue && !hasEmailCue) {
-      return "whatsapp";
-    }
-
-    return category;
-  }
-
-  function inferCategory(instruction: string, originalRequest: string): string | null {
-    const text = `${instruction} ${originalRequest}`.toLowerCase();
-    if (/\b(email|e-mail|smtp|subject|body)\b/.test(text) || /\S+@\S+/.test(text)) {
-      return "email";
-    }
-    if (/\b(discord|guild|channel|server|role|dm|<@!?\d+>)\b/.test(text)) {
-      return "discord";
-    }
-    if (/\b(whatsapp|message|msg|text|auto[- ]?reply)\b/.test(text)) {
-      return "whatsapp";
-    }
-    if (/\b(write|create|compose|generate|poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text)) {
-      return "generation";
-    }
-    if (/\b(open|launch|start|close|quit|exit|chrome|notepad|calculator|discord)\b/.test(text)) {
-      return "apps";
-    }
-    return null;
-  }
-
-  function expandRecipientTargets(category: string, instruction: string): string[] {
-    if (category !== "whatsapp" && category !== "email" && category !== "discord") {
-      return [instruction];
-    }
-
-    const m = instruction.match(/^(.*?\b(?:to|for)\s+)(.+)$/i);
-    if (!m) return [instruction];
-
-    const prefix = m[1];
-    const targetText = m[2].trim();
-    const targets = targetText
-      .split(/\s*(?:,| and | & )\s*/i)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (targets.length <= 1) return [instruction];
-
-    return targets.map((target) => `${prefix}${target}`);
-  }
-
-  // Only decompose if we found 2 or more distinct steps
-  if (steps.length <= 1) return null;
-
-  return { originalRequest, steps, generatedContent: {} };
+  return parseDirectPlan(userRequest);
 }
 
 function parseDirectPlan(userRequest: string): TaskPlan | null {
   const text = userRequest.trim();
   const normalized = text.replace(/^User Request:\s*/i, "");
+  
+  // Split on strong separators or conjunctions that are followed by an action verb
+  // e.g. "and open", "also set", ", then send"
   const chunks = normalized
-    .split(/\b(?:and then|after that|afterwards|then|and finally|finally)\b|[;។]/i)
+    .split(/\b(?:and then|after that|afterwards|then|and finally|finally)\b|[;។]|\b(?:also|and)\b(?=\s+(?:open|launch|set|send|write|create|dm|post|message|turn|close|start)\b)|,\s*(?:also\s+|then\s+|and\s+)?(?=(?:open|launch|set|send|write|create|dm|post|message|turn|close|start)\b)/i)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -343,24 +190,4 @@ function makeLabel(category: string, instruction: string): string {
   }
 }
 
-// ---- LLM helper ----
 
-/** One-shot LLM call: resolves with the full response text. */
-function callLLM(model: string, messages: ChatMessage[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let text = "";
-    let settled = false;
-
-    api.onChatToken((t) => { text += t; }).then((unsubToken) => {
-      api.onChatComplete(() => {
-        unsubToken();
-        if (!settled) { settled = true; resolve(text.trim()); }
-      }).then((unsubComplete) => {
-        api.sendChatMessage(model, messages).catch((e) => {
-          unsubComplete();
-          if (!settled) { settled = true; reject(e); }
-        });
-      }).catch(reject);
-    }).catch(reject);
-  });
-}

@@ -42,9 +42,7 @@ export function useExternalRequests(
         );
 
         try {
-          const latestIntent = is_owner
-            ? detectActionIntent(user_message)
-            : "chat";
+          const latestIntent = detectActionIntent(user_message);
 
           let relevantSkills: import("../../../lib/api").Skill[] = [];
           try {

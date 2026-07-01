@@ -337,27 +337,43 @@ export function isToolName(value: unknown): value is ToolName {
 
 /** Get the unified action few-shot examples as a string. */
 export function getActionFewShots(categories?: string[]): string {
-  if (!categories || categories.length === 0) {
-    return FEW_SHOTS.slice(0, 4).map((e) => e.text).join("\n\n");
+  const cats = categories || [];
+
+  const isSafeExample = (e: typeof FEW_SHOTS[number]) => {
+    return e.categories.every(c => cats.includes(c));
+  };
+
+  const safeExamples = FEW_SHOTS.filter(isSafeExample);
+
+  if (cats.length === 0) {
+    return safeExamples.slice(0, 4).map((e) => e.text).join("\n\n");
   }
   
   const selected: any[] = [];
   const added = new Set<string>();
 
   // 1. Force at least one example for each requested category
-  for (const cat of categories) {
-    const example = FEW_SHOTS.find(e => (e.categories as readonly string[]).includes(cat) && !added.has(e.text));
+  for (const cat of cats) {
+    const example = safeExamples.find(e => (e.categories as readonly string[]).includes(cat) && !added.has(e.text));
     if (example) {
       selected.push(example);
       added.add(example.text);
     }
   }
 
-  // 2. Fill the remaining slots up to 4 with other matching examples,
-  // but ONLY include category-specific ones (ignore length === 0 filler)
-  for (const e of FEW_SHOTS) {
+  // 2. Fill the remaining slots up to 4 with other safe examples
+  for (const e of safeExamples) {
     if (selected.length >= 4) break;
-    if (!added.has(e.text) && (e.categories as readonly string[]).some(c => categories.includes(c))) {
+    if (!added.has(e.text) && e.categories.length > 0) {
+      selected.push(e);
+      added.add(e.text);
+    }
+  }
+
+  // 3. Fill the remaining slots with universal safe examples (no categories)
+  for (const e of safeExamples) {
+    if (selected.length >= 4) break;
+    if (!added.has(e.text)) {
       selected.push(e);
       added.add(e.text);
     }
