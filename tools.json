@@ -525,6 +525,19 @@
         "dir",
         "list"
       ]
+    },
+    {
+      "name": "web_search",
+      "category": "web",
+      "args_signature": "query: string",
+      "description": "Performs a web search through Chrome (Playwright) and returns a compact answer.",
+      "params": [
+        "query"
+      ],
+      "aliases": [
+        "search_web",
+        "search"
+      ]
     }
   ],
   "discord_tools_with_guild_id": [
@@ -549,7 +562,7 @@
       "categories": []
     },
     {
-      "text": "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.",
+      "text": "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart, search, web, lookup), it is NOT conversational.",
       "categories": []
     },
     {
@@ -865,6 +878,12 @@
         "files"
       ],
       "text": "[Context: User is currently viewing project 'Pern']\nUser Request: read src/main.rs\nPlan:\n- read_file(path=\"src/main.rs\")"
+    },
+    {
+      "categories": [
+        "web"
+      ],
+      "text": "User Request: search the web for latest trending foods\\nPlan:\\n- web_search(query=\"latest trending foods\")"
     }
   ]
 }

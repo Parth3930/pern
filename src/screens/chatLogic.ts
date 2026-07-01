@@ -550,6 +550,12 @@ function detectRequiredToolCategories(
     categories.add("banter");
   }
 
+  // 5.7 Web Matcher
+  const isWeb = /\b(search|web|google|lookup|look\s*up|duckduckgo|find\s*out)\b/i.test(normalized);
+  if (isWeb) {
+    categories.add("web");
+  }
+
   // 6. Contextual confirmations/pronouns check
   const isConfirmationOrPronoun =
     /^(yes|yeah|yep|ok|okay|sure|do it|go ahead|send|yes send|please do|again|send it|do that|send him|send her|send them|send to him|send to her|send to them|send on whatsapp|send it on whatsapp|send him on whatsapp|send her on whatsapp)\s*$/i.test(
@@ -1029,6 +1035,8 @@ export function getCurrentTaskLabel(toolCall: ToolCall): string {
       return `Listing directory ${getStringArg(args, "path")}...`;
     case "read_file":
       return `Reading file ${getStringArg(args, "path")}...`;
+    case "web_search":
+      return `Searching the web for "${getStringArg(args, "query")}"...`;
     default:
       return "Processing...";
   }
@@ -1251,6 +1259,7 @@ export function detectActionIntent(
     /\b(shutdown|shut down|reboot|restart|power off|poweroff)\b/i,
     /\b(add|save|create|set|make|schedule)\b.{0,30}\b(to\s+do|todo|todos|reminder|reminders|task|tasks)\b/i,
     /\b(remind|reminder)\b/i,
+    /\b(search\s+(the\s+)?web|search\s+online|google|duckduckgo|bing|look\s+up|lookup)\b/i,
   ];
 
   if (commandPatterns.some((pattern) => pattern.test(normalized))) {

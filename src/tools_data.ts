@@ -298,6 +298,13 @@ export const TOOLS = [
     description: "Lists the contents of a directory in the project.",
     params: ["path"],
     signature: "- list_dir(path: string) -> Lists the contents of a directory in the project."
+  },
+  {
+    name: "web_search",
+    category: "web",
+    description: "Performs a web search through Chrome (Playwright) and returns a compact answer.",
+    params: ["query"],
+    signature: "- web_search(query: string) -> Performs a web search through Chrome (Playwright) and returns a compact answer."
   }
 ] as const;
 
@@ -374,7 +381,9 @@ export const ALIAS_MAP = {
   "view_file": "read_file",
   "ls": "list_dir",
   "dir": "list_dir",
-  "list": "list_dir"
+  "list": "list_dir",
+  "search_web": "web_search",
+  "search": "web_search"
 } as const;
 
 export const FEW_SHOTS = [
@@ -501,6 +510,10 @@ export const FEW_SHOTS = [
   {
     categories: ["files"],
     text: "[Context: User is currently viewing project 'Pern']\nUser Request: read src/main.rs\nPlan:\n- read_file(path=\"src/main.rs\")"
+  },
+  {
+    categories: ["web"],
+    text: "User Request: search the web for latest trending foods\\nPlan:\\n- web_search(query=\"latest trending foods\")"
   }
 ] as const;
 
@@ -514,7 +527,7 @@ export const RULES = [
     categories: []
   },
   {
-    text: "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.",
+    text: "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart, search, web, lookup), it is NOT conversational.",
     categories: []
   },
   {
@@ -660,7 +673,8 @@ export const TOOL_DESCRIPTIONS = {
   "join_minecraft_world": "Spawns a bot player named Pern to join a Minecraft Java edition world (cracked servers supported via offline auth). host is the IP/domain of the server (defaults to 'localhost'), port is optional (defaults to auto-detect or 25565), version defaults to '1.20.4'.",
   "disconnect_minecraft_world": "Disconnects the Pern bot player from the Minecraft world.",
   "read_file": "Reads the contents of a file in the project.",
-  "list_dir": "Lists the contents of a directory in the project."
+  "list_dir": "Lists the contents of a directory in the project.",
+  "web_search": "Performs a web search through Chrome (Playwright) and returns a compact answer."
 } as const;
 
 export const TOOL_PARAMS = {
@@ -703,5 +717,6 @@ export const TOOL_PARAMS = {
   "join_minecraft_world": ["port", "host", "version"],
   "disconnect_minecraft_world": [],
   "read_file": ["path"],
-  "list_dir": ["path"]
+  "list_dir": ["path"],
+  "web_search": ["query"]
 } as const;

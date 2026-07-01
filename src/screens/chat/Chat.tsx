@@ -457,7 +457,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
       if (lastAssIdx !== -1) {
         nextMessages[lastAssIdx] = {
           ...nextMessages[lastAssIdx],
-          content: nextMessages[lastAssIdx].content.trim(),
+          content: nextMessages[lastAssIdx].content.trim() + "\n\n",
           memory_tool_results:
             memoryResults.length > 0 ? memoryResults : undefined,
           harness_plan: plan,
@@ -501,6 +501,13 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
           { role: "assistant", content: lastToolResults },
           { role: "user", content: "Now respond to my original request using the tool results above." },
         ];
+        
+        setMessages((prev) => {
+          const nextMessages = [...prev, { role: "assistant", content: "" } as ChatMessage];
+          messagesRef.current = nextMessages;
+          return nextMessages;
+        });
+
         await api.sendChatMessage(configRef.current.selected_model, minimalMessages);
         return;
       } catch (e) {

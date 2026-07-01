@@ -316,6 +316,7 @@ export const api = {
     invoke<void>("remove_project", { name }),
   read_file: (path: string, projectName: string) => invoke<string>("read_file", { path, projectName }),
   list_dir: (path: string, projectName: string) => invoke<string>("list_dir", { path, projectName }),
+  webSearch: (query: string) => invoke<string>("web_search", { query }),
   listProjects: () => invoke<ProjectConfig[]>("list_projects"),
 
   // Windows Autostart

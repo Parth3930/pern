@@ -301,6 +301,13 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Lists the contents of a directory in the project.",
         params: &["path"],
         signature: "- list_dir(path: string) -> Lists the contents of a directory in the project.",
+    },
+    ToolDefinition {
+        name: "web_search",
+        category: "web",
+        description: "Performs a web search through Chrome (Playwright) and returns a compact answer.",
+        params: &["query"],
+        signature: "- web_search(query: string) -> Performs a web search through Chrome (Playwright) and returns a compact answer.",
     }
 ];
 
@@ -377,7 +384,9 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("view_file", "read_file"),
     ("ls", "list_dir"),
     ("dir", "list_dir"),
-    ("list", "list_dir")
+    ("list", "list_dir"),
+    ("search_web", "web_search"),
+    ("search", "web_search")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[
@@ -504,6 +513,10 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     FewShotExample {
         categories: &["files"],
         text: "[Context: User is currently viewing project 'Pern']\nUser Request: read src/main.rs\nPlan:\n- read_file(path=\"src/main.rs\")",
+    },
+    FewShotExample {
+        categories: &["web"],
+        text: "User Request: search the web for latest trending foods\\nPlan:\\n- web_search(query=\"latest trending foods\")",
     }
 ];
 
@@ -517,7 +530,7 @@ pub const RULES: &[RuleDefinition] = &[
         categories: &[],
     },
     RuleDefinition {
-        text: "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart), it is NOT conversational.",
+        text: "1. If input contains action keywords (message, send, email, discord, whatsapp, app, auto reply, agents, open, close, shutdown, restart, search, web, lookup), it is NOT conversational.",
         categories: &[],
     },
     RuleDefinition {

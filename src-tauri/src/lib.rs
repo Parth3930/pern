@@ -463,6 +463,7 @@ pub fn run() {
             commands::projects::list_dir,
             commands::system::set_autostart,
             commands::system::get_autostart,
+            commands::system::web_search,
             commands::todos::get_todos,
             commands::todos::save_todos,
             commands::memory::memory_list_entities,

@@ -201,6 +201,8 @@ export const MessageList: React.FC<MessageListProps> = ({
             return null;
 
           const isLastAssistantMsg = i === actualLastAssistantIdx;
+          const cleanContent = stripToolCalls(msg.content);
+
           const assistantContent =
             msg.role === "assistant"
               ? renderMessageContent(msg.content, isLastAssistantMsg, msg)
@@ -269,7 +271,7 @@ export const MessageList: React.FC<MessageListProps> = ({
             </div>
           </div>
         )}
-      {isGenerating && currentTask && (
+      {isGenerating && currentTask && (!messages.length || !messages[messages.length - 1].harness_plan) && (
         <div className="message assistant">
           <div className="tool-call-row one-liner">
             <div

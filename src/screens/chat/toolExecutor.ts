@@ -610,6 +610,18 @@ export async function executeSingleTool(
         result = { ok: false, error: getErrorMessage(e) };
       }
     }
+  } else if (tc.tool === "web_search") {
+    const query = getStringArg(tc.args, "query");
+    if (!query) {
+      result = { ok: false, error: "Search query missing." };
+    } else {
+      try {
+        const msg = await api.webSearch(query);
+        result = { ok: true, message: msg };
+      } catch (e) {
+        result = { ok: false, error: getErrorMessage(e) };
+      }
+    }
   } else {
     result = {
       ok: false,

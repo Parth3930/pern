@@ -668,3 +668,31 @@ pub async fn get_autostart() -> Result<bool, String> {
         Ok(false)
     }
 }
+
+#[tauri::command]
+pub async fn web_search(query: String) -> Result<String, String> {
+    use std::process::Command;
+    let mut cmd = Command::new("node");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let script_path = if std::path::Path::new("../scripts/web_search.js").exists() {
+        "../scripts/web_search.js"
+    } else {
+        "scripts/web_search.js"
+    };
+
+    let output = cmd
+        .arg(script_path)
+        .arg(&query)
+        .output()
+        .map_err(|e| format!("Failed to run playwright: {}", e))?;
+    
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
+}
