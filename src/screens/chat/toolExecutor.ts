@@ -30,6 +30,34 @@ export async function executeSingleTool(
     result = appName
       ? await api.launchApp(appName)
       : { ok: false, error: "The app name was missing." };
+  } else if (tc.tool === "take_note") {
+    const text = getStringArg(tc.args, "text");
+    if (!text) {
+      result = { ok: false, error: "Note text is required." };
+    } else {
+      try {
+        let existingNotes: any[] = [];
+        try {
+          existingNotes = await api.getNotes();
+        } catch (e) {
+          const stored = localStorage.getItem("pern_notes");
+          if (stored) existingNotes = JSON.parse(stored);
+        }
+        const newNote = {
+          id: Math.random().toString(36).substring(2, 9),
+          text: text.trim(),
+          time: new Date().toISOString()
+        };
+        existingNotes.unshift(newNote);
+        await api.saveNotes(existingNotes);
+        localStorage.setItem("pern_notes", JSON.stringify(existingNotes));
+        window.dispatchEvent(new Event("pern_notes_updated"));
+
+        result = { ok: true, message: `Saved note successfully.` };
+      } catch (err) {
+        result = { ok: false, error: getErrorMessage(err) };
+      }
+    }
   } else if (tc.tool === "add_todo") {
     const text = getStringArg(tc.args, "text");
     const time = getStringArg(tc.args, "time") || "";

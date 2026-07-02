@@ -414,6 +414,7 @@ export const TOOL_CATEGORIES = {
   email: ["send_email", "save_email_config"],
   agents: ["send_to_cli_agent", "get_cli_agents_status"],
   todos: ["add_todo"],
+  notes: ["take_note"],
   banter: [],
 } as const;
 
@@ -539,6 +540,12 @@ function detectRequiredToolCategories(
   const isTodos = /\b(to[- ]do|todos?|remind(er)?s?)\b/i.test(normalized);
   if (isTodos) {
     categories.add("todos");
+  }
+
+  // 5.5.1 Notes Matcher
+  const isNotes = /\b(note|notes|write down|jot down)\b/i.test(normalized);
+  if (isNotes) {
+    categories.add("notes");
   }
 
   // 5.6 Banter Matcher
@@ -1119,6 +1126,10 @@ export function buildToolReply(toolCall: ToolCall, result: ToolResult): string {
         );
       case "get_cli_agents_status":
         return result.message || "Checked CLI agent status.";
+      case "take_note":
+        return "Note saved successfully.";
+      case "add_todo":
+        return `Todo added: ${getStringArg(args, "text") || "task"}.`;
     }
   }
   return result.error || result.message || "The action failed.";
@@ -1258,6 +1269,7 @@ export function detectActionIntent(
     /\b(send|message|text|email)\b.{0,20}\b(the same|same|it|them|him|her)\b/i,
     /\b(shutdown|shut down|reboot|restart|power off|poweroff)\b/i,
     /\b(add|save|create|set|make|schedule)\b.{0,30}\b(to\s+do|todo|todos|reminder|reminders|task|tasks)\b/i,
+    /\b(take|make|add|write|put|save|drop)\b.{0,100}\b(a\s+note|note|notes)\b/i,
     /\b(remind|reminder)\b/i,
     /\b(search\s+(the\s+)?web|search\s+online|google|duckduckgo|bing|look\s+up|lookup)\b/i,
   ];

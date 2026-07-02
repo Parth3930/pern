@@ -305,6 +305,13 @@ export const TOOLS = [
     description: "Performs a web search through Chrome (Playwright) and returns a compact answer.",
     params: ["query"],
     signature: "- web_search(query: string) -> Performs a web search through Chrome (Playwright) and returns a compact answer."
+  },
+  {
+    name: "take_note",
+    category: "notes",
+    description: "Takes a note and saves it.",
+    params: ["text"],
+    signature: "- take_note(text: string) -> Takes a note and saves it."
   }
 ] as const;
 
@@ -383,10 +390,18 @@ export const ALIAS_MAP = {
   "dir": "list_dir",
   "list": "list_dir",
   "search_web": "web_search",
-  "search": "web_search"
+  "search": "web_search",
+  "add_note": "take_note",
+  "save_note": "take_note",
+  "write_note": "take_note",
+  "note": "take_note"
 } as const;
 
 export const FEW_SHOTS = [
+  {
+    categories: ["notes"],
+    text: "User Request: write a poem about chickens and put it in the notes\\nPlan:\\n- take_note(text=\"Feathers of white,\\nClucking so bright,\\nChickens bring joy,\\nFrom morning to night.\")"
+  },
   {
     categories: [],
     text: "User Request: what is the capital of France?\\nPlan:\\n- conversational()"
@@ -437,15 +452,15 @@ export const FEW_SHOTS = [
   },
   {
     categories: ["whatsapp"],
-    text: "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"{generated_content}\")"
+    text: "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Feathers of white,\\nClucking so bright...\")"
   },
   {
     categories: ["discord"],
-    text: "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"{generated_content}\")"
+    text: "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"Here is the content you requested: ...\")"
   },
   {
     categories: ["email"],
-    text: "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"{generated_content}\")"
+    text: "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"Feathers of white,\\nClucking so bright...\")"
   },
   {
     categories: ["whatsapp"],
@@ -617,6 +632,10 @@ export const RULES = [
   {
     text: "16. SEQUENTIAL AGENTIC LOOP: When given multiple tasks, DO NOT output a massive plan with everything. Output a <plan> with only the FIRST immediate step. Once that tool is executed, the agent loop will automatically invoke you again to continue the plan. One task per response.",
     categories: []
+  },
+  {
+    text: "17. NO PLACEHOLDERS: If asked to write a poem, email, or message, do NOT output a description or placeholder (e.g. '200 words of a poem about...'). You MUST generate the actual full content.",
+    categories: []
   }
 ] as const;
 
@@ -674,7 +693,8 @@ export const TOOL_DESCRIPTIONS = {
   "disconnect_minecraft_world": "Disconnects the Pern bot player from the Minecraft world.",
   "read_file": "Reads the contents of a file in the project.",
   "list_dir": "Lists the contents of a directory in the project.",
-  "web_search": "Performs a web search through Chrome (Playwright) and returns a compact answer."
+  "web_search": "Performs a web search through Chrome (Playwright) and returns a compact answer.",
+  "take_note": "Takes a note and saves it."
 } as const;
 
 export const TOOL_PARAMS = {
@@ -718,5 +738,6 @@ export const TOOL_PARAMS = {
   "disconnect_minecraft_world": [],
   "read_file": ["path"],
   "list_dir": ["path"],
-  "web_search": ["query"]
+  "web_search": ["query"],
+  "take_note": ["text"]
 } as const;

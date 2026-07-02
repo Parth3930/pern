@@ -170,9 +170,9 @@ export function parsePlanToToolCalls(
         let val: unknown;
 
         if (valStr.startsWith('"') && valStr.endsWith('"')) {
-          val = valStr.slice(1, -1).replace(/\\"/g, '"');
+          val = valStr.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n');
         } else if (valStr.startsWith("'") && valStr.endsWith("'")) {
-          val = valStr.slice(1, -1).replace(/\\'/g, "'");
+          val = valStr.slice(1, -1).replace(/\\'/g, "'").replace(/\\n/g, '\n');
         } else {
           val = parseValue(valStr);
         }
@@ -192,9 +192,9 @@ export function parsePlanToToolCalls(
         const valStr = valMatch[0];
         let val: unknown;
         if (valStr.startsWith('"') && valStr.endsWith('"')) {
-          val = valStr.slice(1, -1).replace(/\\"/g, '"');
+          val = valStr.slice(1, -1).replace(/\\"/g, '"').replace(/\\n/g, '\n');
         } else if (valStr.startsWith("'") && valStr.endsWith("'")) {
-          val = valStr.slice(1, -1).replace(/\\'/g, "'");
+          val = valStr.slice(1, -1).replace(/\\'/g, "'").replace(/\\n/g, '\n');
         } else {
           val = parseValue(valStr);
         }

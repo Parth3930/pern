@@ -6,6 +6,7 @@ pub mod projects;
 pub mod skills;
 pub mod system;
 pub mod todos;
+pub mod notes;
 
 pub use automations::*;
 pub use email::*;
@@ -15,3 +16,4 @@ pub use projects::*;
 pub use skills::*;
 pub use system::*;
 pub use todos::*;
+pub use notes::*;

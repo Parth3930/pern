@@ -11,6 +11,7 @@ import ProjectsSettings from "../integrations/projects/Settings";
 import MemorySettings from "../integrations/memory/Settings";
 import SkillsAndLearningSection from "../integrations/SkillsAndLearningPanel";
 import TodoPanel from "./TodoPanel";
+import NotesPanel from "./NotesPanel";
 import MinecraftSettings from "../integrations/minecraft/Settings";
 
 
@@ -24,6 +25,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   const [isWindows, setIsWindows] = useState(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [showTodosOverlay, setShowTodosOverlay] = useState(false);
+  const [showNotesOverlay, setShowNotesOverlay] = useState(false);
 
   const [bgRemovalEnabled, setBgRemovalEnabled] = useState(() => {
     const val = localStorage.getItem("pern_bg_removal_enabled");
@@ -362,6 +364,20 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <CheckSquare size={14} />
               <span>Todos & Reminders</span>
+            </div>
+            <ChevronRight size={14} />
+          </div>
+        </section>
+
+        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+          <div
+            className="section-header clickable"
+            onClick={() => setShowNotesOverlay(true)}
+            style={{ cursor: "pointer" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <FolderOpen size={14} />
+              <span>Notes</span>
             </div>
             <ChevronRight size={14} />
           </div>
@@ -717,6 +733,10 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
       {showTodosOverlay && (
         <TodoPanel onClose={() => setShowTodosOverlay(false)} />
+      )}
+
+      {showNotesOverlay && (
+        <NotesPanel onClose={() => setShowNotesOverlay(false)} />
       )}
     </div>
   );

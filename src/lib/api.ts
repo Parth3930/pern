@@ -327,6 +327,10 @@ export const api = {
   getTodos: () => invoke<any[]>("get_todos"),
   saveTodos: (todos: any[]) => invoke<void>("save_todos", { todos }),
 
+  // Notes persistence
+  getNotes: () => invoke<any[]>("get_notes"),
+  saveNotes: (notes: any[]) => invoke<void>("save_notes", { notes }),
+
   // Long-term memory graph
   memoryListEntities: (category?: string) =>
     invoke<Entity[]>("memory_list_entities", { category: category ?? null }),

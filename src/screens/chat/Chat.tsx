@@ -496,10 +496,10 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         const lastToolResults = followUpMessages.map(m => m.content).join("\n");
         const lastUserMsg = [...messagesRef.current].reverse().find(m => m.role === "user");
         const minimalMessages: ChatMessage[] = [
-          { role: "system", content: "You are Pern. The user asked a question or requested an action. You used tools to gather info or do the action. Answer the user based on the tool results. If the user asks what a project is or what's in it, summarize its purpose and features from the README instead of just listing files. Keep it concise." },
+          { role: "system", content: "You are Pern. You just executed a tool to fulfill the user's request. Answer the user based on the tool results. If the tool result is just a simple success confirmation (like 'Note saved' or 'Message sent'), just warmly confirm to the user that it was done. If the user asks what a project is, summarize it concisely." },
           { role: "user", content: lastUserMsg?.content || "Done?" },
           { role: "assistant", content: lastToolResults },
-          { role: "user", content: "Now respond to my original request using the tool results above." },
+          { role: "user", content: "Now respond to my original request using the tool results above. If it was just a success confirmation, just say it's done." },
         ];
         
         setMessages((prev) => {

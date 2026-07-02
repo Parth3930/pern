@@ -201,7 +201,6 @@ export const MessageList: React.FC<MessageListProps> = ({
             return null;
 
           const isLastAssistantMsg = i === actualLastAssistantIdx;
-          const cleanContent = stripToolCalls(msg.content);
 
           const assistantContent =
             msg.role === "assistant"

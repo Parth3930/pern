@@ -308,6 +308,13 @@ pub const TOOLS: &[ToolDefinition] = &[
         description: "Performs a web search through Chrome (Playwright) and returns a compact answer.",
         params: &["query"],
         signature: "- web_search(query: string) -> Performs a web search through Chrome (Playwright) and returns a compact answer.",
+    },
+    ToolDefinition {
+        name: "take_note",
+        category: "notes",
+        description: "Takes a note and saves it.",
+        params: &["text"],
+        signature: "- take_note(text: string) -> Takes a note and saves it.",
     }
 ];
 
@@ -386,10 +393,18 @@ pub const ALIAS_MAP: &[(&str, &str)] = &[
     ("dir", "list_dir"),
     ("list", "list_dir"),
     ("search_web", "web_search"),
-    ("search", "web_search")
+    ("search", "web_search"),
+    ("add_note", "take_note"),
+    ("save_note", "take_note"),
+    ("write_note", "take_note"),
+    ("note", "take_note")
 ];
 
 pub const FEW_SHOTS: &[FewShotExample] = &[
+    FewShotExample {
+        categories: &["notes"],
+        text: "User Request: write a poem about chickens and put it in the notes\\nPlan:\\n- take_note(text=\"Feathers of white,\\nClucking so bright,\\nChickens bring joy,\\nFrom morning to night.\")",
+    },
     FewShotExample {
         categories: &[],
         text: "User Request: what is the capital of France?\\nPlan:\\n- conversational()",
@@ -440,15 +455,15 @@ pub const FEW_SHOTS: &[FewShotExample] = &[
     },
     FewShotExample {
         categories: &["whatsapp"],
-        text: "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"{generated_content}\")",
+        text: "User Request: send the poem to Rahul on whatsapp\\nPlan:\\n- send_whatsapp_message(recipient=\"Rahul\", message=\"Feathers of white,\\nClucking so bright...\")",
     },
     FewShotExample {
         categories: &["discord"],
-        text: "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"{generated_content}\")",
+        text: "User Request: post it in general channel\\nPlan:\\n- discord_send_channel_message(channel_name=\"general\", message=\"Here is the content you requested: ...\")",
     },
     FewShotExample {
         categories: &["email"],
-        text: "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"{generated_content}\")",
+        text: "User Request: email the poem to Bob\\nPlan:\\n- send_email(to=\"bob@gmail.com\", subject=\"Generated Poem\", body=\"Feathers of white,\\nClucking so bright...\")",
     },
     FewShotExample {
         categories: &["whatsapp"],
@@ -619,6 +634,10 @@ pub const RULES: &[RuleDefinition] = &[
     },
     RuleDefinition {
         text: "16. SEQUENTIAL AGENTIC LOOP: When given multiple tasks, DO NOT output a massive plan with everything. Output a <plan> with only the FIRST immediate step. Once that tool is executed, the agent loop will automatically invoke you again to continue the plan. One task per response.",
+        categories: &[],
+    },
+    RuleDefinition {
+        text: "17. NO PLACEHOLDERS: If asked to write a poem, email, or message, do NOT output a description or placeholder (e.g. '200 words of a poem about...'). You MUST generate the actual full content.",
         categories: &[],
     }
 ];

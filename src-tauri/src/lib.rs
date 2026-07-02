@@ -466,6 +466,8 @@ pub fn run() {
             commands::system::web_search,
             commands::todos::get_todos,
             commands::todos::save_todos,
+            commands::notes::get_notes,
+            commands::notes::save_notes,
             commands::memory::memory_list_entities,
             commands::memory::memory_get_entity,
             commands::memory::memory_add_entity,
