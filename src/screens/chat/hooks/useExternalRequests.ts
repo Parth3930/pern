@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { listen, emit } from "@tauri-apps/api/event";
 import { api, AppConfig, ChatMessage, UserMemory } from "../../../lib/api";
 import {
   buildConversationHistory,
@@ -10,6 +10,8 @@ import {
   stripToolCalls,
 } from "../../chatLogic";
 import { executeSingleTool } from "../toolExecutor";
+import { mightBeMultiStep, decomposeTask } from "../taskPlanner";
+import { useHarness } from "./useHarness";
 
 /**
  * Listens for `request-external-reply` events (incoming WhatsApp / Discord
@@ -20,7 +22,11 @@ export function useExternalRequests(
   userMemoryRef: React.MutableRefObject<UserMemory>,
   configRef: React.MutableRefObject<AppConfig>,
   onConfigUpdateRef: React.MutableRefObject<(() => void) | undefined>,
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  messagesRef: React.MutableRefObject<ChatMessage[]>,
 ) {
+  const { executePlan } = useHarness(configRef.current);
+
   useEffect(() => {
     let active = true;
     let unsubExternal: (() => void) | undefined;
@@ -42,6 +48,45 @@ export function useExternalRequests(
         );
 
         try {
+          if (is_owner && mightBeMultiStep(user_message)) {
+            const plan = await decomposeTask(user_message);
+            if (plan) {
+              console.log("[EXTERNAL_REQUEST] Using planner for:", user_message);
+              let finalReply = "";
+              await executePlan(
+                plan,
+                (_updatedPlan) => {},
+                (msg) => {
+                  finalReply += msg + "\n";
+                }
+              );
+              
+              if (onConfigUpdateRef.current) {
+                try {
+                  await onConfigUpdateRef.current();
+                } catch {}
+              }
+
+              const planReply = finalReply.trim() || "✓ All tasks completed.";
+              
+              const newMessages: ChatMessage[] = [
+                { role: "user", content: `[${platform}] ${contact_name}: ${user_message}` },
+                { role: "assistant", content: planReply }
+              ];
+              setMessages(prev => {
+                const next = [...prev, ...newMessages];
+                messagesRef.current = next;
+                return next;
+              });
+
+              await invoke("submit_external_reply", {
+                requestId: request_id,
+                reply: planReply,
+              });
+              return;
+            }
+          }
+
           const latestIntent = detectActionIntent(user_message);
 
           let relevantSkills: import("../../../lib/api").Skill[] = [];
@@ -63,6 +108,21 @@ export function useExternalRequests(
             configRef.current.whatsapp_contacts,
           );
 
+          const msgs = historyResult.messages;
+          const msgCount = msgs.length;
+          const totalChars = msgs.reduce((acc, m) => acc + (m.content?.length || 0), 0);
+          const roles = msgs.map(m => m.role);
+          await invoke("print_diag", { message: `[CHAT][DIAG] Command received: model=local, messages=${msgCount}, total_chars=${totalChars}, est_tokens=${Math.floor(totalChars / 4)}` });
+          await invoke("print_diag", { message: `[CHAT][DIAG] Message roles: ${JSON.stringify(roles)}` });
+          if (msgs.length > 0 && msgs[0].role === "system") {
+              const sysContent = msgs[0].content || "";
+              await invoke("print_diag", { message: `[CHAT][DIAG] System prompt length: ${sysContent.length} chars, preview: ${sysContent.slice(0, 150)}...` });
+          }
+          const usrMsg = msgs.find(m => m.role === "user");
+          if (usrMsg) {
+              await invoke("print_diag", { message: `[CHAT][DIAG] User message: ${usrMsg.content}` });
+          }
+
           const response = await fetch(
             "http://127.0.0.1:4891/v1/chat/completions",
             {
@@ -80,9 +140,14 @@ export function useExternalRequests(
           if (!response.ok) {
             throw new Error(`Server returned status ${response.status}`);
           }
+          
+          await invoke("print_diag", { message: `[CHAT][DIAG] Response received, status=${response.status}, not streaming` });
 
           const data = await response.json();
           const rawReply = data.choices?.[0]?.message?.content || "";
+          
+          await invoke("print_diag", { message: `[CHAT][DIAG] Emitting chat-complete. Bot answered: ${rawReply}` });
+          await invoke("print_diag", { message: `[CHAT][DIAG] Command finished OK` });
           console.log("[EXTERNAL_REQUEST] Raw reply:", rawReply);
 
           const toolCalls =
@@ -105,9 +170,21 @@ export function useExternalRequests(
 
             for (const tc of toolCalls) {
               try {
+                await emit("app-log", {
+                  level: "info",
+                  message: `[DISCORD] Executing injected tool: ${tc.tool}`,
+                });
                 const res = await executeSingleTool(tc, context);
+                await emit("app-log", {
+                  level: "info",
+                  message: `[DISCORD] Tool ${tc.tool} completed.`,
+                });
                 toolResults.push(buildToolReply(tc, res));
               } catch (err) {
+                await emit("app-log", {
+                  level: "error",
+                  message: `[DISCORD] Error executing ${tc.tool}: ${err}`,
+                });
                 toolResults.push(`Error executing ${tc.tool}: ${err}`);
               }
             }
@@ -125,6 +202,16 @@ export function useExternalRequests(
           } else {
             finalReply = stripToolCalls(rawReply).trim();
           }
+
+          const newMessages: ChatMessage[] = [
+            { role: "user", content: `[${platform}] ${contact_name}: ${user_message}` },
+            { role: "assistant", content: finalReply }
+          ];
+          setMessages(prev => {
+            const next = [...prev, ...newMessages];
+            messagesRef.current = next;
+            return next;
+          });
 
           await invoke("submit_external_reply", {
             requestId: request_id,
@@ -149,7 +236,11 @@ export function useExternalRequests(
           }
         }
       });
-      unsubExternal = u;
+      if (!active) {
+        u();
+      } else {
+        unsubExternal = u;
+      }
     };
 
     setupExternalListener();

@@ -42,6 +42,11 @@ async fn submit_external_reply(
 }
 
 #[tauri::command]
+fn print_diag(message: String) {
+    println!("{}", message);
+}
+
+#[tauri::command]
 async fn send_chat_message(
     model_id: String,
     messages: Vec<ChatMessage>,
@@ -491,7 +496,8 @@ pub fn run() {
             integrations::minecraft::disconnect_minecraft_world,
             integrations::minecraft::get_minecraft_status,
             send_chat_message,
-            submit_external_reply
+            submit_external_reply,
+            print_diag
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

@@ -549,14 +549,30 @@ fn handle_event<'a>(
                             if is_owner {
                                 println!("[DISCORD] Owner message/mention detected: {}", content);
                                 tauri::async_runtime::spawn(async move {
+                                    let _ = app_handle_clone.emit(
+                                        "app-log",
+                                        serde_json::json!({
+                                            "level": "info",
+                                            "message": format!("[DISCORD] Owner message: {}", user_msg)
+                                        }),
+                                    );
+
                                     let reply = generate_discord_action(
                                         &app_handle_clone,
                                         &state_clone,
-                                        user_msg,
+                                        user_msg.clone(),
                                         &author_name,
                                         &guild_id,
                                     )
                                     .await;
+
+                                    let _ = app_handle_clone.emit(
+                                        "app-log",
+                                        serde_json::json!({
+                                            "level": "info",
+                                            "message": format!("[DISCORD] Bot reply: {}", reply)
+                                        }),
+                                    );
 
                                     let use_embed = reply.contains("**CLI Agent Status:**")
                                         || reply.contains("Here are the channels in this server:")
@@ -605,6 +621,7 @@ fn handle_event<'a>(
                                         &author_name,
                                         &author_id_clone,
                                         &message_snippet,
+                                        &reply,
                                         "Action",
                                     )
                                     .await;
@@ -615,13 +632,29 @@ fn handle_event<'a>(
                                     author_name, content
                                 );
                                 tauri::async_runtime::spawn(async move {
+                                    let _ = app_handle_clone.emit(
+                                        "app-log",
+                                        serde_json::json!({
+                                            "level": "info",
+                                            "message": format!("[DISCORD] User message: {}", user_msg)
+                                        }),
+                                    );
+
                                     let reply = generate_discord_reply(
                                         &app_handle_clone,
                                         &state_clone,
-                                        user_msg,
+                                        user_msg.clone(),
                                         &author_name,
                                     )
                                     .await;
+
+                                    let _ = app_handle_clone.emit(
+                                        "app-log",
+                                        serde_json::json!({
+                                            "level": "info",
+                                            "message": format!("[DISCORD] Bot reply: {}", reply)
+                                        }),
+                                    );
                                     let body = serde_json::json!({
                                         "content": reply,
                                         "message_reference": {
@@ -650,6 +683,7 @@ fn handle_event<'a>(
                                         &author_name,
                                         &author_id_clone,
                                         &message_snippet,
+                                        &reply,
                                         "Non-owner Chat",
                                     )
                                     .await;
@@ -2637,6 +2671,7 @@ async fn send_behaviour_log(
     author_name: &str,
     author_id: &str,
     message_snippet: &str,
+    bot_reply: &str,
     reply_type: &str,
 ) {
     if behaviour_channel_id.is_empty() {
@@ -2645,8 +2680,8 @@ async fn send_behaviour_log(
     let client = reqwest::Client::new();
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let content = format!(
-        "**[Behaviour Log] {}**\n> User: {} (`{}`)\n> Action: {}\n> Message: {}\n> Time: {}",
-        reply_type, author_name, author_id, reply_type, message_snippet, timestamp
+        "**[Behaviour Log] {}**\n> User: {} (`{}`)\n> Message: {}\n> Bot Reply & Tools:\n```\n{}\n```\n> Time: {}",
+        reply_type, author_name, author_id, message_snippet, bot_reply, timestamp
     );
     let body = serde_json::json!({ "content": content });
     let url = format!(

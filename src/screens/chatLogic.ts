@@ -415,6 +415,11 @@ export const TOOL_CATEGORIES = {
   agents: ["send_to_cli_agent", "get_cli_agents_status"],
   todos: ["add_todo"],
   notes: ["take_note"],
+  web: ["web_search"],
+  files: ["read_file", "list_dir"],
+  memory: ["remember_fact", "recall_fact", "forget_fact"],
+  automation: ["list_automations", "run_automation"],
+  minecraft: ["join_minecraft_world", "disconnect_minecraft_world"],
   banter: [],
 } as const;
 
@@ -501,19 +506,19 @@ function detectRequiredToolCategories(
   }
 
   // 4. Apps Matcher
-  const isApps =
-    /\b(launch|open|close|start|run|quit|exit|chrome|notepad|calculator|app|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint|file manager|filemanager|files|explorer)\b/i.test(
-      normalized,
-    );
+  // Requires a verb AND an app name, OR just an explicit app name.
+  const appNames = "chrome|notepad|calculator|app|obsidian|discord|vscode|terminal|browser|excel|word|powerpoint|file manager|filemanager|files|explorer";
+  const isApps = new RegExp(`\\b(launch|open|close|start|run|quit|exit)\\b.*\\b(${appNames})\\b|\\b(${appNames})\\b`, "i").test(normalized);
   if (isApps) {
     categories.add("apps");
   }
 
   // 4.5 System Matcher
+  // Requires explicit system words.
   const isSystem =
-    /\b(system|pc|computer|uptime|health|restart|reboot|shut[- ]?down|shutdown|power[- ]?off|poweroff|drive)\b/i.test(
+    /\b(uptime|restart|reboot|shut[- ]?down|shutdown|power[- ]?off|poweroff)\b/i.test(
       normalized,
-    );
+    ) || /\b(system|pc|computer)\b.*\b(health|status|check)\b/i.test(normalized);
   if (isSystem) {
     categories.add("system");
   }
@@ -558,7 +563,7 @@ function detectRequiredToolCategories(
   }
 
   // 5.7 Web Matcher
-  const isWeb = /\b(search|web|google|lookup|look\s*up|duckduckgo|find\s*out)\b/i.test(normalized);
+  const isWeb = /\b(search|web|google|lookup|look\s*up|duckduckgo|find\s*out|find\s+me)\b/i.test(normalized);
   if (isWeb) {
     categories.add("web");
   }
@@ -821,8 +826,6 @@ export function buildConversationHistory(
     }
 
     systemPrompt = buildActionSystemPrompt(memoryContext, categories);
-    const fewShots = getActionFewShots(categories);
-    systemPrompt += `\n\nHere are some examples of how to respond:\n${fewShots}`;
     dynamicContext = "";
   } else {
     // Chat mode: zero mention of JSON or tools — keeps small models from hallucinating JSON
@@ -897,7 +900,8 @@ export function buildConversationHistory(
     const lastMsg = finalMessages[finalMessages.length - 1];
     if (lastMsg.role === "user") {
       if (latestIntent === "action") {
-        lastMsg.content = `User Request: ${lastMsg.content}\nPlan:\n`;
+        const fewShots = getActionFewShots(categories);
+        lastMsg.content = `${fewShots}\n\nUser Request: ${lastMsg.content}\nPlan:\n`;
       } else {
         const contextParts: string[] = [];
         if (memory.name) {

@@ -816,7 +816,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
 
   useChatServer(config, onConfigUpdate);
   useCLIAgentEvents(setMessages, messagesRef);
-  useExternalRequests(userMemoryRef, configRef, onConfigUpdateRef);
+  useExternalRequests(userMemoryRef, configRef, onConfigUpdateRef, setMessages, messagesRef);
 
   const handleVoiceCommand = useCallback((command: string) => {
     handleSend(command, undefined, true);

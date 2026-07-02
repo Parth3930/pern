@@ -48,6 +48,7 @@ async fn generate_reply(
     state: &AppState,
     user_message: String,
     contact_name: Option<&str>,
+    is_owner: bool,
 ) -> String {
     let name = contact_name.unwrap_or("a contact");
     match crate::chat_prompt::request_frontend_reply(
@@ -56,7 +57,7 @@ async fn generate_reply(
         "WhatsApp",
         name,
         &user_message,
-        false, // WhatsApp replies are always strictly chat/non-owner mode
+        is_owner,
     )
     .await
     {
@@ -638,7 +639,8 @@ pub async fn internal_start_whatsapp_session(
                                     return;
                                 }
 
-                                if info.source.is_from_me {
+                                let is_msg_to_self = info.source.is_from_me && info.source.chat == info.source.sender;
+                                if info.source.is_from_me && !is_msg_to_self {
                                     return;
                                 }
 
@@ -874,7 +876,7 @@ pub async fn internal_start_whatsapp_session(
                                         "message": format!("[WHATSAPP] Generating auto-reply for {} (JID: {})...", contact_name.as_deref().unwrap_or(&sender_user), target_jid.to_string())
                                     }));
                                     tokio::spawn(async move {
-                                        let reply_text = generate_reply(&app_handle_inner, &state_clone, text_clone, contact_name.as_deref()).await;
+                                        let reply_text = generate_reply(&app_handle_inner, &state_clone, text_clone, contact_name.as_deref(), is_msg_to_self).await;
 
                                         // Simulate a small delay for "thinking" and to avoid immediate bot detection
                                         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
