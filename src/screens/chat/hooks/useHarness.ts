@@ -22,36 +22,70 @@ export function useHarness(config: AppConfig) {
         generatedContent: { ...plan.generatedContent },
       };
 
+      // Phase 1: Generation steps (sequential due to frontend LLM event listener constraints)
       for (let i = 0; i < live.steps.length; i++) {
         if (abortRef.current) break;
-
         const step = live.steps[i];
+        if (step.category !== "generation") continue;
+
         live.steps[i] = { ...step, status: "running" };
         onStepUpdate({ ...live, steps: [...live.steps] });
 
         try {
-          if (step.category === "generation") {
-            const result = await runGenerationStep(step, config);
-            const key = extractContentKey(step.prompt);
-            live.generatedContent[key] = result;
-            live.steps[i] = { ...step, status: "done", result };
-          } else {
-            const result = await runActionStep(step, live, config);
-            live.steps[i] = {
-              ...step,
-              status: result.ok ? "done" : "error",
-              result: result.message,
-            };
-            if (!result.ok) {
-              onChatMessage(`✗ ${step.label}: ${result.message || "failed"}`);
-            }
-          }
+          const result = await runGenerationStep(step, config);
+          const key = extractContentKey(step.prompt);
+          live.generatedContent[key] = result;
+          live.steps[i] = { ...step, status: "done", result };
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           live.steps[i] = { ...step, status: "error", result: msg };
           onChatMessage(`✗ ${step.label}: ${msg}`);
         }
+        onStepUpdate({ ...live, steps: [...live.steps] });
+      }
 
+      if (abortRef.current) return;
+
+      // Phase 2: Action steps (Batched into a single LLM call for speed!)
+      const actionIndices = live.steps
+        .map((s, i) => (s.category !== "generation" ? i : -1))
+        .filter((i) => i !== -1);
+      const actionSteps = actionIndices.map((i) => live.steps[i]);
+
+      if (actionSteps.length > 0) {
+        for (const i of actionIndices) {
+          live.steps[i] = { ...live.steps[i], status: "running" };
+        }
+        onStepUpdate({ ...live, steps: [...live.steps] });
+
+        try {
+          const result = await runActionSteps(actionSteps, live, config);
+          if (!result.ok) {
+            for (const i of actionIndices) {
+              live.steps[i] = { ...live.steps[i], status: "error", result: result.message };
+            }
+            onChatMessage(`✗ Actions: ${result.message || "failed"}`);
+          } else {
+            // Execute the resulting tools sequentially
+            for (const call of result.toolCalls) {
+              if (abortRef.current) break;
+              const res = await executeTool(call);
+              if (!res.ok) {
+                onChatMessage(`✗ ${call.tool}: ${res.message || "failed"}`);
+              }
+            }
+            // Mark all action steps as done
+            for (const i of actionIndices) {
+              live.steps[i] = { ...live.steps[i], status: "done", result: "Completed" };
+            }
+          }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          for (const i of actionIndices) {
+            live.steps[i] = { ...live.steps[i], status: "error", result: msg };
+          }
+          onChatMessage(`✗ Actions failed: ${msg}`);
+        }
         onStepUpdate({ ...live, steps: [...live.steps] });
       }
     },
@@ -92,27 +126,34 @@ async function runGenerationStep(
 }
 
 /**
- * Action step: LLM gets only the relevant category's tool signatures + generated content.
- * No conversation history. No unrelated tools.
+ * Batched Action steps: One LLM call for all actions to save time.
  */
-async function runActionStep(
-  step: TaskStep,
+async function runActionSteps(
+  steps: TaskStep[],
   plan: TaskPlan,
   config: AppConfig,
-): Promise<{ ok: boolean; message?: string }> {
-  const systemPrompt = buildActionSystemPrompt("", [step.category]);
-  const fewShots = getActionFewShots([step.category]);
+): Promise<{ ok: boolean; message?: string; toolCalls: ToolCall[] }> {
+  const categories = Array.from(new Set(steps.map((s) => s.category)));
+  const systemPrompt = buildActionSystemPrompt("", categories);
+  const fewShots = getActionFewShots(categories);
 
-  // Inject generated content so the model can reference it (just the values)
   const generatedStr = Object.values(plan.generatedContent).join("\n\n");
-  const needsGeneratedContent =
-    !!generatedStr && /\b(send|post|email|message|dm)\b/i.test(step.prompt);
+  const needsGeneratedContent = steps.some(
+    (s) => !!generatedStr && /\b(send|post|email|message|dm)\b/i.test(s.prompt),
+  );
+
   const contextBlock = needsGeneratedContent
     ? `[Generated content:\n${generatedStr}]\n\nIMPORTANT: If the task is to send or post the generated content, you MUST use the exact string "{generated_content}" as the message argument. Do NOT write out the text itself. Example: message="{generated_content}"\n\n`
     : "";
-  const taskPrompt = needsGeneratedContent
-    ? `${step.prompt} (CRITICAL: Use the exact string "{generated_content}" for the message/post argument!)`
-    : step.prompt;
+
+  const taskPrompt = steps
+    .map((s) => {
+      const needs = !!generatedStr && /\b(send|post|email|message|dm)\b/i.test(s.prompt);
+      return needs
+        ? `${s.prompt} (CRITICAL: Use the exact string "{generated_content}" for the message/post argument!)`
+        : s.prompt;
+    })
+    .join("\nAND\n");
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
@@ -126,23 +167,23 @@ async function runActionStep(
   const toolCalls = extractToolCalls(response, plan.originalRequest);
 
   if (toolCalls.length === 0) {
-    return { ok: false, message: `No tool call found for: ${step.label}` };
+    return { ok: false, message: `No tool calls found for the requested actions.`, toolCalls: [] };
   }
 
-  const call = toolCalls[0];
-
   if (needsGeneratedContent) {
-    for (const key in call.args) {
-      if (
-        typeof call.args[key] === "string" &&
-        call.args[key] === "{generated_content}"
-      ) {
-        call.args[key] = generatedStr;
+    for (const call of toolCalls) {
+      for (const key in call.args) {
+        if (
+          typeof call.args[key] === "string" &&
+          call.args[key] === "{generated_content}"
+        ) {
+          call.args[key] = generatedStr;
+        }
       }
     }
   }
 
-  return executeTool(call);
+  return { ok: true, toolCalls };
 }
 
 async function executeTool(
