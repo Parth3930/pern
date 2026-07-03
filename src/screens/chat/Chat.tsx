@@ -559,6 +559,36 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
     setActivePlan(null); // Clear floating planner since it's now in chat history
   };
 
+  const handleClearChat = async () => {
+    awaitingModelResponseRef.current = false;
+    lastExecutedToolCallRef.current = null;
+    emptyResponseRetryCountRef.current = 0;
+    chatActionMemoryRef.current = {};
+    messagesRef.current = [];
+    setMessages([]);
+    setInput("");
+    setCurrentTask(null);
+    setIsGenerating(false);
+    lastToolResultRef.current = null;
+
+    const clearedMemory = { name: null, persona: [], conversation_summary: "" };
+    setUserMemory(clearedMemory);
+    try {
+      await api.updateUserMemory(clearedMemory);
+      console.log("[MEMORY] Cleared all memory on user request.");
+    } catch (e) {
+      console.error("[MEMORY] Failed to clear memory:", e);
+    }
+  };
+
+  useEffect(() => {
+    const listener = () => {
+      handleClearChat();
+    };
+    window.addEventListener("clear-chat", listener);
+    return () => window.removeEventListener("clear-chat", listener);
+  }, []);
+
   const handleSend = async (overrideInput?: string, imageOpts?: any, isVoice?: boolean, projectName?: string, displayContent?: string) => {
     const textToSend = overrideInput !== undefined ? overrideInput : input;
     if (!textToSend.trim() && !imageOpts?.file || isGenerating) return;
@@ -687,25 +717,7 @@ export default function Chat({ config, onConfigUpdate, setShowTodos }: Props) {
         cleanInputForCommand,
       )
     ) {
-      awaitingModelResponseRef.current = false;
-      lastExecutedToolCallRef.current = null;
-      emptyResponseRetryCountRef.current = 0;
-      chatActionMemoryRef.current = {};
-      messagesRef.current = [];
-      setMessages([]);
-      setInput("");
-      setCurrentTask(null);
-      setIsGenerating(false);
-      lastToolResultRef.current = null;
-
-      const clearedMemory = { name: null, persona: [], conversation_summary: "" };
-      setUserMemory(clearedMemory);
-      try {
-        await api.updateUserMemory(clearedMemory);
-        console.log("[MEMORY] Cleared all memory on user request.");
-      } catch (e) {
-        console.error("[MEMORY] Failed to clear memory:", e);
-      }
+      await handleClearChat();
       return;
     }
 

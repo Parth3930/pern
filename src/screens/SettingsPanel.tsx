@@ -22,6 +22,20 @@ interface Props {
 }
 
 export default function SettingsPanel({ config, onClose, onSaved }: Props) {
+  useEffect(() => {
+    if (!onClose) return;
+    const handlePopState = () => {
+      onClose();
+    };
+    window.history.pushState({ panelOpen: true }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.panelOpen) {
+        window.history.back();
+      }
+    };
+  }, [onClose]);
   const [isWindows, setIsWindows] = useState(false);
   const [autostartEnabled, setAutostartEnabled] = useState(false);
   const [showTodosOverlay, setShowTodosOverlay] = useState(false);
@@ -278,7 +292,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
   const renderMainContent = () => {
     return (
       <>
-        <section className="settings-section" style={{ borderBottom: "1px solid var(--border)", paddingBottom: "1.25rem", marginBottom: "0.5rem" }}>
+        <section className="settings-section" style={{ borderBottom: "1px solid var(--border)", paddingBottom: "1.25rem" }}>
           <div className="settings-item">
             <label className="settings-label" style={{ fontWeight: 600 }}>Model Directory</label>
             <div className="minimal-path-input">
@@ -355,7 +369,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
         <MemorySettings />
 
-        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+        <section className="settings-section collapsible">
           <div
             className="section-header clickable"
             onClick={() => setShowTodosOverlay(true)}
@@ -369,7 +383,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
           </div>
         </section>
 
-        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+        <section className="settings-section collapsible" >
           <div
             className="section-header clickable"
             onClick={() => setShowNotesOverlay(true)}
@@ -383,7 +397,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
           </div>
         </section>
 
-        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+        <section className="settings-section collapsible" >
           <div
             className={`section-header clickable ${voiceExpanded ? "active" : ""}`}
             onClick={() => setVoiceExpanded(!voiceExpanded)}
@@ -470,7 +484,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
           )}
         </section>
 
-        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+        <section className="settings-section collapsible" >
           <div
             className={`section-header clickable ${imageExpanded ? "active" : ""}`}
             onClick={() => setImageExpanded(!imageExpanded)}
@@ -510,7 +524,7 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
           )}
         </section>
 
-        <section className="settings-section collapsible" style={{ marginTop: "0.5rem" }}>
+        <section className="settings-section collapsible" >
           <div
             className={`section-header clickable ${modelsExpanded ? "active" : ""}`}
             onClick={() => setModelsExpanded(!modelsExpanded)}
@@ -643,7 +657,6 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
         <div
           className="settings-item"
           style={{
-            marginTop: "0.5rem",
             borderTop: "1px solid var(--border)",
             paddingTop: "1rem",
           }}
@@ -691,6 +704,32 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
                 Repair
               </button>
             )}
+          </div>
+        </div>
+
+        <div className="settings-item" style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <span className="settings-label" style={{ margin: 0, fontWeight: 600 }}>Onboarding</span>
+            </div>
+            <button
+              className="minimal-btn primary"
+              style={{
+                fontSize: "0.75rem",
+                padding: "0.3rem 1rem",
+                borderRadius: "4px",
+              }}
+              onClick={async () => {
+                try {
+                  await api.setFirstRunCompleted(false);
+                  window.location.reload();
+                } catch (e) {
+                  console.error("Failed to reset onboarding", e);
+                }
+              }}
+            >
+              Redo Onboarding
+            </button>
           </div>
         </div>
       </>

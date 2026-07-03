@@ -6,7 +6,7 @@ import Chat from "./screens/chat/Chat";
 import SettingsPanel from "./screens/SettingsPanel";
 import TodoPanel from "./screens/TodoPanel";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Settings, Terminal } from "lucide-react";
+import { Settings, Trash2 } from "lucide-react";
 
 function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -239,12 +239,11 @@ function App() {
 
         <div className="title-bar-actions">
           <button
-            className="action-btn logs-btn"
-            onClick={() => setShowLogs(!showLogs)}
-            title="Show Debug Logs"
-            style={{ color: showLogs ? "var(--accent)" : "inherit" }}
+            className="action-btn clear-btn"
+            onClick={() => window.dispatchEvent(new CustomEvent("clear-chat"))}
+            title="Clear Chat"
           >
-            <Terminal size={14} />
+            <Trash2 size={14} />
           </button>
           <button
             className="action-btn settings-btn"

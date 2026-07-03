@@ -18,6 +18,20 @@ interface Props {
 }
 
 export default function TodoPanel({ onClose, isEmbedded = false }: Props) {
+  useEffect(() => {
+    if (!onClose) return;
+    const handlePopState = () => {
+      onClose();
+    };
+    window.history.pushState({ panelOpen: true }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.panelOpen) {
+        window.history.back();
+      }
+    };
+  }, [onClose]);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTodoText, setNewTodoText] = useState("");
   const [hasReminder, setHasReminder] = useState(true); // Default to true!

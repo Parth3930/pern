@@ -1,17 +1,22 @@
 import { useState, useEffect, useRef } from "react";
+import gsap from "gsap";
+import { useGSAP } from "@gsap/react";
 import { api, AppConfig, ModelInfo, DownloadProgress, LlamaInstallProgress } from "../lib/api";
 import {
   ChevronRight,
   Download,
   FolderOpen,
   Terminal as TerminalIcon,
-  Cpu,
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import pernLogo from "../assets/logo.png";
 import thinking3 from "../assets/thinking/thinking_3.png";
+import executing5 from "../assets/executing/executing_5.png";
+import executing6 from "../assets/executing/executing_6.png";
+import { MonitorSmartphone } from "lucide-react";
 
 interface Props {
   config: AppConfig | null;
@@ -41,6 +46,18 @@ export default function Onboarding({ config, onComplete }: Props) {
 
   const [logs, setLogs] = useState<LogLine[]>([]);
   const terminalRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useGSAP(
+    () => {
+      gsap.fromTo(
+        ".onboarding-card",
+        { opacity: 0, y: 15 },
+        { opacity: 1, y: 0, duration: 0.4, ease: "power2.out" }
+      );
+    },
+    { dependencies: [step], scope: containerRef }
+  );
 
   useEffect(() => {
     api.listAvailableModels().then(setModels);
@@ -116,7 +133,13 @@ export default function Onboarding({ config, onComplete }: Props) {
 
   const handleNext = () => {
     setProgress(null);
-    setStep((s) => s + 1);
+    if (step === 0 && platformInfo?.os === "android") {
+      setStep(0.5);
+    } else if (step === 0.5) {
+      setStep(1);
+    } else {
+      setStep((s) => s + 1);
+    }
   };
 
   const handleModelSelect = async (id: string) => {
@@ -209,7 +232,7 @@ export default function Onboarding({ config, onComplete }: Props) {
   };
 
   return (
-    <div className="onboarding-container">
+    <div className="onboarding-container" ref={containerRef}>
       <div
         className="onboarding-content"
         style={{ width: "100%", height: "100%" }}
@@ -223,6 +246,7 @@ export default function Onboarding({ config, onComplete }: Props) {
               style={{
                 width: "80px",
                 height: "80px",
+                objectFit: "contain",
                 borderRadius: "20px",
                 marginBottom: "1.25rem",
                 boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
@@ -241,6 +265,27 @@ export default function Onboarding({ config, onComplete }: Props) {
           </div>
         )}
 
+        {/* Step 0.5: Android Recommendation */}
+        {step === 0.5 && (
+          <div className="onboarding-card">
+            <MonitorSmartphone size={64} style={{ color: "var(--accent)", marginBottom: "1.25rem" }} />
+            <h1 className="onboarding-title">Try Desktop For Best Experience</h1>
+            <p className="onboarding-text" style={{ lineHeight: "1.6" }}>
+              Pern runs offline AI models locally. While Android is supported, models may run slower and consume significant battery.
+              <br/><br/>
+              For the best developer experience, we highly recommend using the <strong>Windows/Desktop</strong> application. You can download it at <span onClick={() => openUrl("https://pern.iparthsharma.me")} style={{ color: "var(--accent)", textDecoration: "underline", cursor: "pointer" }}>pern.iparthsharma.me</span>.
+            </p>
+            <div className="onboarding-footer">
+              <button className="btn" onClick={() => setStep(0)}>
+                Back
+              </button>
+              <button className="btn btn-primary" onClick={handleNext}>
+                I understand <ChevronRight size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Step 1: Choose Model */}
         {step === 1 && (
           <div className="onboarding-card">
@@ -248,10 +293,12 @@ export default function Onboarding({ config, onComplete }: Props) {
               src={thinking3}
               alt="Thinking"
               style={{
-                width: "60px",
-                height: "60px",
-                marginBottom: "1rem",
-                borderRadius: "12px",
+                width: "80px",
+                height: "80px",
+                objectFit: "contain",
+                marginBottom: "1.25rem",
+                borderRadius: "20px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
               }}
             />
             <h1 className="onboarding-title">Choose your model</h1>
@@ -294,6 +341,18 @@ export default function Onboarding({ config, onComplete }: Props) {
         {/* Step 2: Configure Storage */}
         {step === 2 && (
           <div className="onboarding-card">
+            <img
+              src={executing5}
+              alt="Storage"
+              style={{
+                width: "80px",
+                height: "80px",
+                objectFit: "contain",
+                marginBottom: "1.25rem",
+                borderRadius: "20px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+              }}
+            />
             <h1 className="onboarding-title">Configure storage</h1>
             <p className="onboarding-text">
               Choose where Pern should store your local AI models.
@@ -332,10 +391,19 @@ export default function Onboarding({ config, onComplete }: Props) {
         {/* Step 3: Setup AI Engine (llama-server installation) */}
         {step === 3 && (
           <div className="onboarding-card">
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.5rem" }}>
-              <Cpu size={28} style={{ color: "var(--accent)", flexShrink: 0 }} />
-              <h1 className="onboarding-title" style={{ marginBottom: 0 }}>Setup AI Engine</h1>
-            </div>
+            <img
+              src={executing6}
+              alt="AI Engine"
+              style={{
+                width: "80px",
+                height: "80px",
+                objectFit: "contain",
+                marginBottom: "1.25rem",
+                borderRadius: "20px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+              }}
+            />
+            <h1 className="onboarding-title">Setup AI Engine</h1>
             <p className="onboarding-text" style={{ fontSize: "0.8rem" }}>
               Pern needs <strong>llama.cpp</strong> to run AI models locally on {getPlatformLabel()}.
               {llamaInstalled === null

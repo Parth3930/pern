@@ -14,6 +14,20 @@ interface Props {
 }
 
 export default function NotesPanel({ onClose, isEmbedded = false }: Props) {
+  useEffect(() => {
+    if (!onClose) return;
+    const handlePopState = () => {
+      onClose();
+    };
+    window.history.pushState({ panelOpen: true }, '');
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      if (window.history.state?.panelOpen) {
+        window.history.back();
+      }
+    };
+  }, [onClose]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
