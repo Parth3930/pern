@@ -671,28 +671,88 @@ pub async fn get_autostart() -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn web_search(query: String) -> Result<String, String> {
-    use std::process::Command;
-    let mut cmd = Command::new("node");
     #[cfg(target_os = "windows")]
     {
+        use std::process::Command;
         use std::os::windows::process::CommandExt;
+        
+        let mut cmd = Command::new("node");
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let script_path = if std::path::Path::new("../scripts/web_search.js").exists() {
-        "../scripts/web_search.js"
-    } else {
-        "scripts/web_search.js"
-    };
+        
+        let script_path = if std::path::Path::new("../scripts/web_search.js").exists() {
+            "../scripts/web_search.js"
+        } else {
+            "scripts/web_search.js"
+        };
 
-    let output = cmd
-        .arg(script_path)
-        .arg(&query)
-        .output()
-        .map_err(|e| format!("Failed to run playwright: {}", e))?;
-    
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
+        let output = cmd
+            .arg(script_path)
+            .arg(&query)
+            .output()
+            .map_err(|e| format!("Failed to run playwright: {}", e))?;
+        
+        if output.status.success() {
+            return Ok(String::from_utf8_lossy(&output.stdout).to_string());
+        } else {
+            return Err(String::from_utf8_lossy(&output.stderr).to_string());
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use reqwest::Client;
+        use regex::Regex;
+
+        let client = Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            .build()
+            .map_err(|e| format!("Failed to create http client: {}", e))?;
+
+        let params = [("q", query.as_str())];
+        
+        // DuckDuckGo Lite version which doesn't require JS
+        let res = client
+            .post("https://lite.duckduckgo.com/lite/")
+            .form(&params)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to connect to search engine: {}", e))?;
+
+        let text = res.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+
+        // Quick and dirty regex extraction for DDG Lite results
+        static RE_TITLE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let re_title = RE_TITLE.get_or_init(|| {
+            Regex::new(r#"<a class="result-title"[^>]*>(.*?)</a>"#).unwrap()
+        });
+        
+        static RE_SNIPPET: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+        let re_snippet = RE_SNIPPET.get_or_init(|| {
+            Regex::new(r#"<td class="result-snippet"[^>]*>(.*?)</td>"#).unwrap()
+        });
+
+        let mut results_str = String::new();
+        let titles: Vec<_> = re_title.captures_iter(&text).map(|c| c[1].to_string()).collect();
+        let snippets: Vec<_> = re_snippet.captures_iter(&text).map(|c| c[1].to_string()).collect();
+
+        for (t, s) in titles.iter().zip(snippets.iter()).take(5) {
+            // Strip out bold tags from title and snippet
+            let clean_title = t.replace("<b>", "").replace("</b>", "").replace("\n", " ").trim().to_string();
+            let clean_snippet = s.replace("<b>", "").replace("</b>", "").replace("\n", " ").trim().to_string();
+            results_str.push_str(&format!("Title: {}\nSnippet: {}\n\n", clean_title, clean_snippet));
+        }
+
+        if results_str.is_empty() {
+            // Fallback: strip all html and return first 500 chars
+            static RE_TAGS: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+            let re_tags = RE_TAGS.get_or_init(|| {
+                Regex::new(r"<[^>]+>").unwrap()
+            });
+            let no_html = re_tags.replace_all(&text, " ").replace("  ", " ");
+            let limit = no_html.len().min(1000);
+            Ok(no_html[..limit].to_string())
+        } else {
+            Ok(results_str.trim().to_string())
+        }
     }
 }
