@@ -38,7 +38,9 @@
     "planner:test": "bun scripts/planner-regression.ts",
     "preview": "vite preview",
     "tauri": "tauri",
-    "android:build": "tauri android build --target aarch64"
+    "android:build": "tauri android build --target aarch64",
+    "macos:build": "tauri build",
+    "linux:build": "tauri build"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

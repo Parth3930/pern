@@ -228,57 +228,78 @@ pub fn get_app_dir() -> PathBuf {
     }
 }
 
+pub fn get_db_conn() -> Result<rusqlite::Connection, String> {
+    let mut path = get_app_dir();
+    if !path.exists() {
+        fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    }
+    path.push("app.db");
+    
+    let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
+    
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS kv_store (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        rusqlite::params![],
+    ).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS semantic_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text_content TEXT NOT NULL,
+            embedding BLOB,
+            metadata TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+        rusqlite::params![],
+    ).map_err(|e| e.to_string())?;
+
+    Ok(conn)
+}
+
 pub fn get_config_path() -> PathBuf {
     let mut path = get_app_dir();
     path.push("config.json");
     path
 }
+
 pub fn load_config() -> AppConfig {
+    if let Ok(conn) = get_db_conn() {
+        if let Ok(mut stmt) = conn.prepare("SELECT value FROM kv_store WHERE key = 'config'") {
+            if let Ok(content) = stmt.query_row(rusqlite::params![], |row| row.get::<_, String>(0)) {
+                if let Ok(mut config) = serde_json::from_str::<AppConfig>(&content) {
+                    let mut dirty = false;
+                    if config.config_version < 1 { config.config_version = 1; dirty = true; }
+                    if config.config_version < 2 { dirty |= migrate_config_v1_to_v2(&mut config); config.config_version = 2; }
+                    if config.config_version < 3 { dirty |= migrate_config_v2_to_v3(&mut config); config.config_version = 3; }
+                    if config.config_version < 4 { dirty |= migrate_config_v3_to_v4(&mut config); config.config_version = 4; }
+                    if dirty { let _ = save_config(&config); }
+                    return config;
+                }
+            }
+        }
+    }
+    
     let path = get_config_path();
     if path.exists() {
         if let Ok(content) = fs::read_to_string(&path) {
             match serde_json::from_str::<AppConfig>(&content) {
                 Ok(mut config) => {
                     let mut dirty = false;
-
-                    // Run versioned migrations
-                    if config.config_version < 1 {
-                        config.config_version = 1;
-                        dirty = true;
-                    }
-                    if config.config_version < 2 {
-                        dirty |= migrate_config_v1_to_v2(&mut config);
-                        config.config_version = 2;
-                    }
-                    if config.config_version < 3 {
-                        dirty |= migrate_config_v2_to_v3(&mut config);
-                        config.config_version = 3;
-                    }
-                    if config.config_version < 4 {
-                        dirty |= migrate_config_v3_to_v4(&mut config);
-                        config.config_version = 4;
-                    }
-
-                    // NOTE: do NOT clear `conversation_summary` here. The
-                    // summary is chat-session-scoped and must be cleared by
-                    // the frontend (via the `clear_conversation_summary`
-                    // command) when a new chat session starts, not on every
-                    // app launch. See `clear_conversation_summary` helper.
-
-                    if dirty {
-                        let _ = save_config(&config);
-                    }
+                    if config.config_version < 1 { config.config_version = 1; dirty = true; }
+                    if config.config_version < 2 { dirty |= migrate_config_v1_to_v2(&mut config); config.config_version = 2; }
+                    if config.config_version < 3 { dirty |= migrate_config_v2_to_v3(&mut config); config.config_version = 3; }
+                    if config.config_version < 4 { dirty |= migrate_config_v3_to_v4(&mut config); config.config_version = 4; }
+                    let _ = save_config(&config);
+                    let mut backup_path = path.clone();
+                    backup_path.set_extension("json.bak");
+                    let _ = fs::rename(&path, &backup_path);
                     return config;
                 }
                 Err(e) => {
-                    eprintln!("[CONFIG] Error deserializing config: {}. Wiping is blocked, backing up old config.", e);
-                    let mut backup_path = path.clone();
-                    backup_path.set_extension("json.bak");
-                    if let Err(backup_err) = fs::write(&backup_path, &content) {
-                        eprintln!("[CONFIG] Failed to write backup file to {:?}: {}", backup_path, backup_err);
-                    } else {
-                        eprintln!("[CONFIG] Backed up corrupted/old config file to {:?}", backup_path);
-                    }
+                    eprintln!("[CONFIG] Error deserializing config: {}", e);
                 }
             }
         }
@@ -287,12 +308,14 @@ pub fn load_config() -> AppConfig {
 }
 
 pub fn save_config(config: &AppConfig) -> Result<(), String> {
-    let path = get_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let conn = get_db_conn()?;
     let content = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    fs::write(path, content).map_err(|e| e.to_string())
+    conn.execute(
+        "INSERT INTO kv_store (key, value) VALUES ('config', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = ?1",
+        rusqlite::params![content],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn get_todos_path() -> PathBuf {
@@ -302,10 +325,22 @@ pub fn get_todos_path() -> PathBuf {
 }
 
 pub fn load_todos() -> serde_json::Value {
+    if let Ok(conn) = get_db_conn() {
+        if let Ok(mut stmt) = conn.prepare("SELECT value FROM kv_store WHERE key = 'todos'") {
+            if let Ok(content) = stmt.query_row(rusqlite::params![], |row| row.get::<_, String>(0)) {
+                if let Ok(todos) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return todos;
+                }
+            }
+        }
+    }
+    
     let path = get_todos_path();
     if path.exists() {
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(todos) = serde_json::from_str::<serde_json::Value>(&content) {
+                let _ = save_todos(&todos);
+                let _ = fs::rename(&path, path.with_extension("json.bak"));
                 return todos;
             }
         }
@@ -314,12 +349,14 @@ pub fn load_todos() -> serde_json::Value {
 }
 
 pub fn save_todos(todos: &serde_json::Value) -> Result<(), String> {
-    let path = get_todos_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let conn = get_db_conn()?;
     let content = serde_json::to_string_pretty(todos).map_err(|e| e.to_string())?;
-    fs::write(path, content).map_err(|e| e.to_string())
+    conn.execute(
+        "INSERT INTO kv_store (key, value) VALUES ('todos', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = ?1",
+        rusqlite::params![content],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 pub fn get_notes_path() -> PathBuf {
@@ -329,10 +366,22 @@ pub fn get_notes_path() -> PathBuf {
 }
 
 pub fn load_notes() -> serde_json::Value {
+    if let Ok(conn) = get_db_conn() {
+        if let Ok(mut stmt) = conn.prepare("SELECT value FROM kv_store WHERE key = 'notes'") {
+            if let Ok(content) = stmt.query_row(rusqlite::params![], |row| row.get::<_, String>(0)) {
+                if let Ok(notes) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return notes;
+                }
+            }
+        }
+    }
+    
     let path = get_notes_path();
     if path.exists() {
         if let Ok(content) = fs::read_to_string(&path) {
             if let Ok(notes) = serde_json::from_str::<serde_json::Value>(&content) {
+                let _ = save_notes(&notes);
+                let _ = fs::rename(&path, path.with_extension("json.bak"));
                 return notes;
             }
         }
@@ -341,12 +390,14 @@ pub fn load_notes() -> serde_json::Value {
 }
 
 pub fn save_notes(notes: &serde_json::Value) -> Result<(), String> {
-    let path = get_notes_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let conn = get_db_conn()?;
     let content = serde_json::to_string_pretty(notes).map_err(|e| e.to_string())?;
-    fs::write(path, content).map_err(|e| e.to_string())
+    conn.execute(
+        "INSERT INTO kv_store (key, value) VALUES ('notes', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = ?1",
+        rusqlite::params![content],
+    ).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[cfg(test)]

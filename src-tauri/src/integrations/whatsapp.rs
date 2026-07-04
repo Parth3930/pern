@@ -15,7 +15,6 @@ use wa_rs_binary::jid::{Jid, SERVER_JID};
 use wa_rs_binary::node::{Node, NodeContent};
 use wa_rs_proto::whatsapp::Message as WaMessage;
 use wa_rs_sqlite_storage::SqliteStore;
-extern crate libsqlite3_sys;
 
 pub struct WhatsAppManager {
     pub bot: Arc<Mutex<Option<Bot>>>,
@@ -244,7 +243,8 @@ async fn clear_whatsapp_db() {
     let db_path_str = db_path.to_string_lossy().to_string();
     let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
         use std::ffi::{CStr, CString};
-        use libsqlite3_sys as ffi;
+        use rusqlite::ffi;
+
 
         let path = CString::new(db_path_str).map_err(|e| e.to_string())?;
         let mut db: *mut ffi::sqlite3 = std::ptr::null_mut();

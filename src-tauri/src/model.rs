@@ -116,7 +116,6 @@ pub fn get_model_registry() -> Vec<ModelInfo> {
             estimated_memory: "5.1 GB".to_string(),
             recommended_for: "Agentic coding and reasoning".to_string(),
         },
-
     ]
 }
 

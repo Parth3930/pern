@@ -398,6 +398,7 @@ pub fn run() {
             commands::model::delete_model,
             commands::model::choose_model,
             commands::model::choose_model_dir,
+            commands::model::import_local_model,
             commands::model::set_first_run_completed,
             commands::model::download_model,
             commands::model::start_llama_server,
@@ -495,6 +496,9 @@ pub fn run() {
             integrations::minecraft::join_minecraft_world,
             integrations::minecraft::disconnect_minecraft_world,
             integrations::minecraft::get_minecraft_status,
+            integrations::telegram::send_telegram_message,
+            integrations::slack::send_slack_message,
+            integrations::browser::browser_research,
             send_chat_message,
             submit_external_reply,
             print_diag

@@ -34,13 +34,13 @@ export interface TaskPlan {
 // ---- Pre-filter ----
 // Avoids the planning LLM call for obviously simple single-step requests.
 
-const CONJUNCTIONS = /\b(and then|and also|then|also|after that|afterwards|and set|and send|and message|and email|and open|and launch|once you have|once done)\b/i;
-const ACTION_WORDS = /\b(write|create|generate|compose|message|send|set|email|open|launch|discord|whatsapp)\b/i;
+const CONJUNCTIONS = /\b(and then|and also|then|also|after that|afterwards|and set|and send|and message|and email|and open|and launch|and save|and take|and add|once you have|once done)\b/i;
+const ACTION_WORDS = /\b(write|create|generate|compose|message|send|set|email|open|launch|discord|whatsapp|take|save|add|put)\b/i;
 
 /**
  * Quick heuristic: does this request look like it needs multiple steps?
  * Only returns true if there's a conjunction AND at least one action keyword.
- * Avoids planning LLM calls for simple queries.
+ * Avoids the planning LLM call for obviously simple single-step requests.
  */
 export function mightBeMultiStep(text: string): boolean {
   return CONJUNCTIONS.test(text) && ACTION_WORDS.test(text);
@@ -58,6 +58,57 @@ const nextId = () => `s${++_n}`;
 export async function decomposeTask(
   userRequest: string,
 ): Promise<TaskPlan | null> {
+  try {
+    const response = await fetch("http://127.0.0.1:4891/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "local",
+        messages: [
+          {
+            role: "system",
+            content: "You are a simple task planner. Break the user's multi-step request into a sequence of atomic actions.\nOutput exactly one action per line in the format:\ncategory: instruction\n\nAvailable categories:\n- generation (for writing poems, essays, jokes, etc.)\n- notes (for saving/adding notes)\n- whatsapp (for sending messages)\n- discord (for discord status/activity)\n- apps (for opening/closing apps)\n- email (for sending emails)\n\nRules:\n1. No intro, no outro, no markdown blocks. Just the lines.\n2. If the user asks to send to multiple people, make separate whatsapp actions for each person.\n3. Keep instructions clear and self-contained.\n4. If it's just one step, output a single line."
+          },
+          { role: "user", content: userRequest }
+        ],
+        temperature: 0.1,
+        stream: false,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const rawReply = (data.choices?.[0]?.message?.content || "").trim();
+      
+      const lines = rawReply.split("\n").map((l: string) => l.trim()).filter(Boolean);
+      
+      const steps: TaskStep[] = [];
+      for (const line of lines) {
+        const m = line.match(/^([a-z]+):\s*(.+)$/i);
+        if (m) {
+          const category = m[1].toLowerCase();
+          const prompt = m[2].trim();
+          steps.push({
+            id: nextId(),
+            label: makeLabel(category, prompt),
+            category,
+            prompt,
+            status: "pending",
+          });
+        }
+      }
+      
+      if (steps.length > 1) {
+        return { originalRequest: userRequest, steps, generatedContent: {} };
+      } else if (steps.length === 1) {
+        return null;
+      }
+    }
+  } catch (err) {
+    console.error("LLM planner failed, falling back to regex parser:", err);
+  }
+
+  // Fallback
   return parseDirectPlan(userRequest);
 }
 
@@ -68,7 +119,7 @@ function parseDirectPlan(userRequest: string): TaskPlan | null {
   // Split on strong separators or conjunctions that are followed by an action verb
   // e.g. "and open", "also set", ", then send"
   const chunks = normalized
-    .split(/\b(?:and then|after that|afterwards|then|and finally|finally)\b|[;។]|\b(?:also|and)\b(?=\s+(?:open|launch|set|send|write|create|dm|post|message|turn|close|start)\b)|,\s*(?:also\s+|then\s+|and\s+)?(?=(?:open|launch|set|send|write|create|dm|post|message|turn|close|start)\b)/i)
+    .split(/\b(?:and then|after that|afterwards|then|and finally|finally)\b|[;។]|\b(?:also|and)\b(?=\s+(?:open|launch|set|send|write|create|dm|post|message|turn|close|start|save|take|add|put)\b)|,\s*(?:also\s+|then\s+|and\s+)?(?=(?:open|launch|set|send|write|create|dm|post|message|turn|close|start|save|take|add|put)\b)/i)
     .map((s) => s.trim())
     .filter(Boolean);
 
@@ -100,8 +151,11 @@ function parseDirectPlan(userRequest: string): TaskPlan | null {
 
 function inferDirectCategory(chunk: string): string | null {
   const text = chunk.toLowerCase();
-  if (/\b(write|create|compose|generate|draft)\b/.test(text) && /\b(poem|haiku|story|joke|quote|song|letter|note|essay|caption|rap|limerick|pun)\b/.test(text)) {
+  if (/\b(write|create|compose|generate|draft)\b/.test(text) && /\b(poem|haiku|story|joke|quote|song|letter|essay|caption|rap|limerick|pun)\b/.test(text)) {
     return "generation";
+  }
+  if (/\b(take|save|write|add|put)\b/.test(text) && /\b(note|notes)\b/.test(text)) {
+    return "notes";
   }
   if (/\b(turn on|turn off|enable|disable|auto[- ]?reply)\b/.test(text)) {
     return "whatsapp";

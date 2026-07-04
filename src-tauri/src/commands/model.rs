@@ -66,8 +66,76 @@ pub async fn list_installed_models(state: State<'_, AppState>) -> Result<Vec<Str
 }
 
 #[tauri::command]
-pub async fn list_available_models() -> Result<Vec<ModelInfo>, String> {
-    Ok(get_model_registry())
+pub async fn list_available_models(state: State<'_, AppState>) -> Result<Vec<ModelInfo>, String> {
+    let config = state.config.lock().await;
+    let target_dir = PathBuf::from(&config.model_dir);
+    drop(config);
+
+    let mut available = crate::model::get_model_registry();
+
+    if !target_dir.exists() {
+        return Ok(available);
+    }
+
+    if let Ok(mut entries) = tokio_fs::read_dir(target_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Ok(metadata) = entry.metadata().await {
+                if metadata.is_file() {
+                    let file_name = entry.file_name().to_string_lossy().to_string();
+                    if file_name.ends_with(".gguf") {
+                        if !available.iter().any(|m| m.file_name == file_name) {
+                            available.push(ModelInfo {
+                                id: file_name.clone(),
+                                display_name: file_name.clone(),
+                                file_name: file_name.clone(),
+                                download_url: "".to_string(),
+                                sha256: None,
+                                tier: "custom".to_string(),
+                                default: false,
+                                size_mb: metadata.len() / (1024 * 1024),
+                                recommended_ram_gb: 4,
+                                context_length: 4096,
+                                estimated_memory: format!("{} GB", metadata.len() / (1024 * 1024 * 1024)),
+                                recommended_for: "Custom local model".to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    Ok(available)
+}
+
+#[tauri::command]
+pub async fn import_local_model(
+    source_path: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let config = state.config.lock().await;
+    let target_dir = PathBuf::from(&config.model_dir);
+    drop(config);
+
+    tokio_fs::create_dir_all(&target_dir)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let source = PathBuf::from(&source_path);
+    let file_name = source.file_name().ok_or("Invalid file")?.to_string_lossy().to_string();
+    if !file_name.ends_with(".gguf") {
+        return Err("Only .gguf files are supported".to_string());
+    }
+
+    let mut dest_path = target_dir;
+    dest_path.push(&file_name);
+
+    // ponytail: minimum that works. direct copy.
+    tokio_fs::copy(&source, &dest_path)
+        .await
+        .map_err(|e| format!("Failed to copy file: {}", e))?;
+
+    Ok(file_name)
 }
 
 #[tauri::command]
@@ -102,22 +170,23 @@ pub async fn delete_model(
     model_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let registry = get_model_registry();
-    let model_info = registry
-        .into_iter()
+    let registry = crate::model::get_model_registry();
+    let file_name = registry
+        .iter()
         .find(|m| m.id == model_id)
-        .ok_or_else(|| "Model not found in registry".to_string())?;
+        .map(|m| m.file_name.clone())
+        .unwrap_or_else(|| model_id.clone());
 
-    // Check if it's the running model or if we should stop the server
     let stop_server = {
         let current_model_lock = state.current_model_id.lock().await;
-        current_model_lock.as_ref().map_or(false, |m| m == &model_id)
+        current_model_lock.as_ref().map_or(false, |m| m == &model_id || m == &file_name)
     };
 
     if stop_server {
         let mut server_lock = state.llama_server.lock().await;
         if let Some(mut child) = server_lock.take() {
             let _ = child.kill();
+            let _ = child.wait();
         }
         let mut current_model_lock = state.current_model_id.lock().await;
         *current_model_lock = None;
@@ -128,19 +197,17 @@ pub async fn delete_model(
     drop(config);
 
     let mut file_path = target_dir.clone();
-    file_path.push(&model_info.file_name);
+    file_path.push(&file_name);
+
+    if !file_path.exists() {
+        file_path = target_dir.clone();
+        file_path.push(&model_id);
+    }
 
     if file_path.exists() {
         tokio_fs::remove_file(&file_path)
             .await
             .map_err(|e| format!("Failed to delete model file: {}", e))?;
-    }
-
-    // Also delete any partial download file if it exists
-    let mut part_path = target_dir;
-    part_path.push(format!("{}.part", model_info.file_name));
-    if part_path.exists() {
-        let _ = tokio_fs::remove_file(&part_path).await;
     }
 
     Ok(())
@@ -236,15 +303,13 @@ pub async fn start_llama_server(
     }
 
     // 3. Find model info
-    let registry = get_model_registry();
-    let model_info = registry
-        .into_iter()
-        .find(|m| m.id == model_id)
-        .ok_or_else(|| "Model not found in registry".to_string())?;
-
     let config = state.config.lock().await;
     let mut model_path = PathBuf::from(&config.model_dir);
-    model_path.push(&model_info.file_name);
+    let mut model_filename = model_id.clone();
+    if !model_filename.ends_with(".gguf") {
+        model_filename.push_str(".gguf");
+    }
+    model_path.push(&model_filename);
     let llama_path_from_config = config.llama_server_path.clone();
     let gpu_layers = config.llama_gpu_layers;
     let threads = config.llama_threads;
@@ -343,7 +408,7 @@ pub async fn start_llama_server(
         "--port".to_string(),
         "4891".to_string(),
         "-c".to_string(),
-        model_info.context_length.min(4096).to_string(),
+        "4096".to_string(), // ponytail: hardcode default context
         "--embedding".to_string(),
         "--n-gpu-layers".to_string(),
         gpu_layers.to_string(),
@@ -468,8 +533,8 @@ pub async fn download_model(
     window: Window,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let registry = get_model_registry();
-    let model_info = registry
+    let registry = crate::model::get_model_registry();
+    let model = registry
         .into_iter()
         .find(|m| m.id == model_id)
         .ok_or_else(|| "Model not found in registry".to_string())?;
@@ -478,133 +543,49 @@ pub async fn download_model(
     let target_dir = PathBuf::from(&config.model_dir);
     drop(config);
 
-    tokio_fs::create_dir_all(&target_dir)
-        .await
-        .map_err(|e| format!("Failed to create model directory: {}", e))?;
-
-    let mut final_path = target_dir.clone();
-    final_path.push(&model_info.file_name);
-
-    tracing::info!("[MODEL] Checking if model {} already exists...", model_id);
-    let _ = window.emit("app-log", json!({ "level": "info", "message": format!("Checking if {} is already downloaded...", model_id) }));
-
-    if final_path.exists() {
-        tracing::info!(
-            "[MODEL] Model {} found locally. Skipping download.",
-            model_id
-        );
-        let _ = window.emit("app-log", json!({ "level": "info", "message": format!("Model {} is already present. Skipping download.", model_id) }));
-        let _ = window.emit("model-download-complete", model_id);
-        return Ok(());
+    if !target_dir.exists() {
+        std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
     }
 
-    let mut part_path = target_dir.clone();
-    part_path.push(format!("{}.part", model_info.file_name));
+    let mut target_path = target_dir;
+    target_path.push(&model.file_name);
 
-    tracing::info!(
-        "[MODEL] Downloading {} from {}...",
-        model_id, model_info.download_url
-    );
-    let _ = window.emit(
-        "app-log",
-        json!({ "level": "info", "message": format!("Connecting to server for {}...", model_id) }),
-    );
-
-    let client = Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .read_timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| {
-            let msg = format!("Failed to build client: {}", e);
-            let _ = window.emit("app-log", json!({ "level": "error", "message": &msg }));
-            msg
-        })?;
-
+    let client = reqwest::Client::new();
     let res = client
-        .get(&model_info.download_url)
+        .get(&model.download_url)
         .send()
         .await
-        .map_err(|e| {
-            let msg = format!("Network error: {}. Check your connection.", e);
-            let _ = window.emit("app-log", json!({ "level": "error", "message": &msg }));
-            tracing::error!("[MODEL] Network Error: {}", e);
-            msg
-        })?;
+        .map_err(|e| e.to_string())?;
 
     if !res.status().is_success() {
-        let msg = format!("Server error: {}. URL may be invalid.", res.status());
-        let _ = window.emit("app-log", json!({ "level": "error", "message": &msg }));
-        tracing::error!("[MODEL] HTTP Error: {}", res.status());
-        return Err(msg);
+        return Err(format!("Download failed with status: {}", res.status()));
     }
 
-    let total_size = res.content_length();
-    tracing::info!("[MODEL] Total size: {:?}", total_size);
-    let mut downloaded: u64 = 0;
-
-    let mut file = tokio_fs::File::create(&part_path).await.map_err(|e| {
-        let msg = format!("Disk error: {}. Ensure path is writable.", e);
-        let _ = window.emit("app-log", json!({ "level": "error", "message": &msg }));
-        tracing::error!("[MODEL] File Create Error: {}", e);
-        msg
-    })?;
+    let total_size = res.content_length().unwrap_or(0);
     let mut stream = res.bytes_stream();
+    let mut file = tokio_fs::File::create(&target_path)
+        .await
+        .map_err(|e| e.to_string())?;
 
+    let mut downloaded = 0;
     while let Some(chunk_res) = stream.next().await {
-        let chunk = chunk_res.map_err(|e| format!("Download error: {}", e))?;
-        file.write_all(&chunk)
-            .await
-            .map_err(|e| format!("Write error: {}", e))?;
+        let chunk = chunk_res.map_err(|e| e.to_string())?;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         downloaded += chunk.len() as u64;
 
-        if let Some(total) = total_size {
+        if total_size > 0 {
+            let pct = (downloaded as f64 / total_size as f64 * 100.0) as u32;
             let _ = window.emit(
                 "model-download-progress",
-                DownloadProgress {
-                    status: Some("Downloading model...".to_string()),
-                    error: None,
-                    digest: None,
-                    total: Some(total),
-                    completed: Some(downloaded),
-                },
+                serde_json::json!({
+                    "completed": downloaded,
+                    "total": total_size,
+                    "status": format!("Downloading {}...", pct)
+                }),
             );
         }
     }
 
-    file.flush()
-        .await
-        .map_err(|e| format!("Flush error: {}", e))?;
-    drop(file);
-
-    // Rename .part to final
-    tokio_fs::rename(&part_path, &final_path)
-        .await
-        .map_err(|e| format!("Rename error: {}", e))?;
-
-    // Verify SHA256 if model_info.sha256 is Some
-    if let Some(expected_sha256) = &model_info.sha256 {
-        tracing::info!("[MODEL] Verifying SHA256 checksum...");
-        let _ = window.emit("app-log", json!({ "level": "info", "message": format!("Verifying SHA256 checksum for {}...", model_id) }));
-        let file_content = tokio_fs::read(&final_path).await.map_err(|e| format!("Failed to read downloaded file for verification: {}", e))?;
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(&file_content);
-        let actual_hash = format!("{:x}", hasher.finalize());
-        if actual_hash.to_lowercase() != expected_sha256.to_lowercase() {
-            let _ = tokio_fs::remove_file(&final_path).await;
-            let msg = format!(
-                "SHA256 mismatch for {}: expected {}, got {}",
-                model_id, expected_sha256, actual_hash
-            );
-            tracing::error!("[MODEL] ERROR: {}", msg);
-            let _ = window.emit("app-log", json!({ "level": "error", "message": &msg }));
-            return Err(msg);
-        }
-        tracing::info!("[MODEL] SHA256 verification passed.");
-    }
-
-    tracing::info!("[MODEL] Model {} download complete.", model_id);
-    let _ = window.emit("app-log", json!({ "level": "info", "message": format!("Model {} successfully downloaded.", model_id) }));
     let _ = window.emit("model-download-complete", model_id);
     Ok(())
 }
@@ -823,15 +804,15 @@ pub async fn install_llama_server(
         ("bin-android-arm64.tar.gz", "llama-server", false)
     } else if cfg!(target_os = "macos") {
         if cfg!(target_arch = "aarch64") {
-            ("bin-macos-arm64.tar.gz", "llama-server", false)
+            ("bin-macos-arm64.zip", "llama-server", true)
         } else {
-            ("bin-macos-x64.tar.gz", "llama-server", false)
+            ("bin-macos-x64.zip", "llama-server", true)
         }
     } else if cfg!(target_os = "linux") {
         if cfg!(target_arch = "aarch64") {
-            ("bin-ubuntu-arm64.tar.gz", "llama-server", false)
+            ("bin-ubuntu-arm64.zip", "llama-server", true)
         } else {
-            ("bin-ubuntu-x64.tar.gz", "llama-server", false)
+            ("bin-ubuntu-x64.zip", "llama-server", true)
         }
     } else {
         return Err("Unsupported platform".to_string());

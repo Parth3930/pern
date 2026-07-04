@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+default-run = "pern"
 
 [profile.dev]
 debug = false # Disables debug info
@@ -53,9 +54,11 @@ wa-rs-proto = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 wa-rs-binary = "0.2"
 diesel = { version = "2.3", features = ["sqlite"] }
-libsqlite3-sys = { version = "0.35", features = ["bundled"] }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
 zip = "2"
 flate2 = "1"
 tar = "0.4"
 sha2 = "0.10"
 tracing = { version = "0.1", features = ["std"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+headless_chrome = "1.0.22"

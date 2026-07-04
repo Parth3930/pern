@@ -24,6 +24,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const CAT_EMOJI: Record<string, string> = {
   generation: "✍️",
+  notes: "📝",
   whatsapp: "💬",
   discord: "🎮",
   email: "📧",

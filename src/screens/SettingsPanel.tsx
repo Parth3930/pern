@@ -539,6 +539,38 @@ export default function SettingsPanel({ config, onClose, onSaved }: Props) {
 
           {modelsExpanded && (
             <div className="settings-list animate-fade-in" style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "0.85rem", color: "var(--text-secondary)" }}>Available Models</span>
+                <button
+                  className="minimal-btn primary"
+                  style={{ fontSize: "0.75rem", padding: "0.3rem 0.8rem", borderRadius: "4px" }}
+                  onClick={async () => {
+                    try {
+                      const selected = await open({
+                        multiple: false,
+                        filters: [{ name: 'GGUF', extensions: ['gguf'] }]
+                      });
+                      if (selected && typeof selected === "string") {
+                        setDownloadingModelId("importing");
+                        const newModel = await api.importLocalModel(selected);
+                        const avail = await api.listAvailableModels();
+                        setModels(avail);
+                        const installed = await api.listInstalledModels();
+                        setInstalledFiles(installed);
+                        await handleSelectModel(newModel);
+                        setDownloadingModelId(null);
+                        alert("Model imported successfully!");
+                      }
+                    } catch (e) {
+                      console.error("Import failed", e);
+                      alert(`Import failed: ${e}`);
+                      setDownloadingModelId(null);
+                    }
+                  }}
+                >
+                  Import .gguf
+                </button>
+              </div>
               <div className="model-settings-list" style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {models.map((m) => {
                   const isDownloaded = installedFiles.includes(m.file_name);

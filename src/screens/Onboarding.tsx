@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
-import { api, AppConfig, ModelInfo, DownloadProgress, LlamaInstallProgress } from "../lib/api";
+import { api, AppConfig, LlamaInstallProgress } from "../lib/api";
 import {
   ChevronRight,
   Download,
   FolderOpen,
-  Terminal as TerminalIcon,
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
@@ -30,12 +29,10 @@ interface LogLine {
 
 export default function Onboarding({ config, onComplete }: Props) {
   const [step, setStep] = useState(0);
-  const [models, setModels] = useState<ModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>(
     config?.selected_model || "qwen-1.5-1.8b-chat-q4",
   );
   const [modelDir, setModelDir] = useState<string>(config?.model_dir || "");
-  const [progress, setProgress] = useState<DownloadProgress | null>(null);
 
   // AI Engine setup state
   const [llamaInstalled, setLlamaInstalled] = useState<boolean | null>(null);
@@ -60,7 +57,6 @@ export default function Onboarding({ config, onComplete }: Props) {
   );
 
   useEffect(() => {
-    api.listAvailableModels().then(setModels);
     api.getPlatformInfo().then(setPlatformInfo).catch(console.error);
   }, []);
 
@@ -71,18 +67,7 @@ export default function Onboarding({ config, onComplete }: Props) {
     let unsubLlamaInstall: (() => void) | undefined;
 
     const setup = async () => {
-      const u1 = await api.onDownloadProgress((p) => {
-        if (!active) return;
-        setProgress((prev) => {
-          const newState = { ...prev, ...p };
-          return newState;
-        });
-      });
-      if (!active) {
-        u1();
-      } else {
-        unsubProgress = u1;
-      }
+
 
       const u2 = await api.onAppLog((log) => {
         if (!active) return;
@@ -132,7 +117,6 @@ export default function Onboarding({ config, onComplete }: Props) {
   }, [step]);
 
   const handleNext = () => {
-    setProgress(null);
     if (step === 0 && platformInfo?.os === "android") {
       setStep(0.5);
     } else if (step === 0.5) {
@@ -169,7 +153,6 @@ export default function Onboarding({ config, onComplete }: Props) {
     }
   };
 
-  const [error, setError] = useState<string | null>(null);
 
   const startLlamaInstall = async () => {
     setLlamaInstalling(true);
@@ -187,34 +170,7 @@ export default function Onboarding({ config, onComplete }: Props) {
     }
   };
 
-  const startDownload = async () => {
-    if (progress && !error) return; // Prevent double click unless it's a retry
 
-    setError(null);
-    // Set initial state to switch UI to downloading view
-    setProgress({ status: "Starting download...", completed: 0, total: 100 });
-    setLogs((prev) => [
-      ...prev,
-      { level: "info", message: `Verifying/Downloading ${selectedModel}...` },
-    ]);
-
-    const unsub = await api.onDownloadComplete((mid) => {
-      if (mid === selectedModel) {
-        onComplete();
-        unsub();
-      }
-    });
-
-    try {
-      await api.downloadModel(selectedModel);
-    } catch (e) {
-      console.error("Download failed", e);
-      const msg = typeof e === "string" ? e : "Process Interrupted";
-      setLogs((prev) => [...prev, { level: "error", message: msg }]);
-      setError(msg);
-      unsub();
-    }
-  };
 
   const getPlatformLabel = () => {
     if (!platformInfo) return "your device";
@@ -301,30 +257,35 @@ export default function Onboarding({ config, onComplete }: Props) {
                 boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
               }}
             />
-            <h1 className="onboarding-title">Choose your model</h1>
+            <h1 className="onboarding-title">Bring your own model</h1>
+            <p className="onboarding-text">Pern works with any GGUF formatted local model. Pick one to get started.</p>
 
-            <div className="model-list">
-              {models.map((m) => (
-                <div
-                  key={m.id}
-                  className={`model-item ${selectedModel === m.id ? "selected" : ""}`}
-                  onClick={() => handleModelSelect(m.id)}
-                >
-                  <div className="model-header">
-                    <span className="model-name">{m.display_name}</span>
-                    {m.default && (
-                      <span className="badge default">Default</span>
-                    )}
-                    {m.tier === "recommended" && (
-                      <span className="badge recommended">Recommended</span>
-                    )}
-                  </div>
-                  <div className="model-desc">{m.recommended_for}</div>
-                  <div className="model-meta">
-                    <span>VRAM/RAM: ~{m.estimated_memory}</span>
-                  </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%', alignItems: 'center', margin: '2rem 0' }}>
+              {selectedModel && selectedModel !== "qwen-1.5-1.8b-chat-q4" ? (
+                <div style={{ padding: '1rem', border: '1px solid var(--accent)', borderRadius: '8px', color: 'var(--accent)' }}>
+                  Selected: {selectedModel}
                 </div>
-              ))}
+              ) : null}
+              <button 
+                className="btn btn-primary"
+                onClick={async () => {
+                  try {
+                    const selected = await open({
+                      multiple: false,
+                      filters: [{ name: 'GGUF Model', extensions: ['gguf'] }]
+                    });
+                    if (selected && typeof selected === "string") {
+                      const newModel = await api.importLocalModel(selected);
+                      await handleModelSelect(newModel);
+                    }
+                  } catch (e) {
+                    console.error("Import failed", e);
+                  }
+                }}
+              >
+                Import .gguf File
+              </button>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>You can also do this later in Settings.</span>
             </div>
 
             <div className="onboarding-footer">
@@ -566,101 +527,25 @@ export default function Onboarding({ config, onComplete }: Props) {
           </div>
         )}
 
-        {/* Step 4: Download Model */}
+        {/* Step 4: Finish Setup */}
         {step === 4 && (
           <div className="onboarding-card">
-            <h1 className="onboarding-title">Ready to Download</h1>
+            <h1 className="onboarding-title">Ready to Go!</h1>
             <p className="onboarding-text">
-              We're all set to download{" "}
-              {models.find((m) => m.id === selectedModel)?.display_name}.
+              Pern is set up and ready to use. 
+              {selectedModel && selectedModel !== "qwen-1.5-1.8b-chat-q4" 
+                ? ` Selected model: ${selectedModel}.`
+                : " You can import a model later from Settings."}
             </p>
 
-            {progress ? (
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "0.5rem",
-                  width: "100%",
-                }}
-              >
-                <div className="terminal-container" ref={terminalRef}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.5rem",
-                      marginBottom: "0.5rem",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    <TerminalIcon size={14} />
-                    <span>DOWNLOAD LOGS</span>
-                  </div>
-                  {logs.map((log, i) => (
-                    <div key={i} className={`terminal-line ${log.level}`}>
-                      [{new Date().toLocaleTimeString()}] {log.message}
-                    </div>
-                  ))}
-                  <div
-                    className="progress-bar-container"
-                    style={{ height: "4px", marginTop: "0.5rem" }}
-                  >
-                    <div
-                      className="progress-bar-fill"
-                      style={{
-                        width:
-                          progress.total && progress.completed
-                            ? `${(progress.completed / progress.total) * 100}%`
-                            : "0%",
-                      }}
-                    />
-                  </div>
-                  <div
-                    className="progress-text"
-                    style={{ fontSize: "0.7rem", marginTop: "4px" }}
-                  >
-                    <span>{progress.status}</span>
-                    <span>
-                      {progress.total && progress.completed
-                        ? `${Math.round((progress.completed / progress.total) * 100)}%`
-                        : ""}
-                    </span>
-                  </div>
-                </div>
-
-                {error && (
-                  <div className="onboarding-footer">
-                    <button
-                      className="btn"
-                      onClick={() => {
-                        setProgress(null);
-                        setError(null);
-                        setStep(2);
-                      }}
-                    >
-                      Change Settings
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      onClick={startDownload}
-                      style={{ backgroundColor: "var(--accent)" }}
-                    >
-                      Retry Download <Download size={18} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="onboarding-footer">
-                <button className="btn" onClick={() => setStep(3)}>
-                  Back
-                </button>
-                <button className="btn btn-primary" onClick={startDownload}>
-                  Download Model <Download size={18} />
-                </button>
-              </div>
-            )}
+            <div className="onboarding-footer" style={{ marginTop: '2rem' }}>
+              <button className="btn" onClick={() => setStep(3)}>
+                Back
+              </button>
+              <button className="btn btn-primary" onClick={onComplete}>
+                Finish Setup <CheckCircle size={18} />
+              </button>
+            </div>
           </div>
         )}
       </div>

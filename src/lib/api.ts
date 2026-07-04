@@ -203,6 +203,7 @@ export const api = {
   deleteModel: (modelId: string) => invoke<void>("delete_model", { modelId }),
   chooseModel: (modelId: string) => invoke<void>("choose_model", { modelId }),
   chooseModelDir: (path: string) => invoke<void>("choose_model_dir", { path }),
+  importLocalModel: (sourcePath: string) => invoke<string>("import_local_model", { sourcePath }),
   setFirstRunCompleted: (completed: boolean) =>
     invoke<void>("set_first_run_completed", { completed }),
   downloadModel: (modelId: string) =>

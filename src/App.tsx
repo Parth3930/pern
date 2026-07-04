@@ -41,6 +41,25 @@ function App() {
     async function loadState() {
       try {
         const state = await api.getOnboardingState();
+        
+        try {
+          const installedModels = await api.listInstalledModels();
+          if (installedModels.length > 0) {
+            const hasModel = installedModels.some(id => id === state.selected_model);
+            if (!hasModel) {
+              state.selected_model = installedModels[0];
+              await api.chooseModel(installedModels[0]);
+            }
+          } else {
+            // No models downloaded. Keep it empty or default.
+            if (!state.selected_model) {
+               state.selected_model = "";
+            }
+          }
+        } catch (e) {
+          console.error("Auto-select failed", e);
+        }
+        
         setConfig(state);
         // If first run is "completed" but llama-server is not installed,
         // force back to onboarding so they can install the AI engine
