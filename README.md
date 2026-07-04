@@ -7,7 +7,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Android-green?style=flat-square)](#multi-platform-support)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)](LICENSE)
 
-Pern is a private, offline-first personal AI assistant and developer workspace built using **Tauri v2**, **React 19**, **TypeScript**, and **Rust**. It runs an embedded local Llama server (`llama-server` / `llama.cpp`) to execute GGUF language and reasoning models entirely on-device — no external API keys, no cloud round-trips, no data leaving your hardware.
+Pern is a private, offline-first personal AI assistant and developer workspace built using **Tauri v2**, **React 19**, **TypeScript**, and **Rust**. As an open-source, local LLM alternative to ChatGPT and Claude, it runs an embedded local Llama server (`llama-server` / `llama.cpp`) to execute GGUF language and reasoning models entirely on-device — no external API keys, no cloud round-trips, no data leaving your hardware. It features a complete AI desktop client with privacy-first AI integrations.
 
 ---
 
